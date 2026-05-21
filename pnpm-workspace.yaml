@@ -70,6 +70,8 @@ autoInstallPeers: false
 
 onlyBuiltDependencies:
   - '@swc/core'
+  - '@napi-rs/canvas'
+  - better-sqlite3
   - esbuild
   - msw
   - unrs-resolver
