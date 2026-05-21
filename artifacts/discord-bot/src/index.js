@@ -1,20 +1,25 @@
 /**
- * Main entry point — Memberk Emails Discord bot.
+ * Multi-bot launcher — Memberk Emails Discord Bot
  *
- * Startup sequence:
- *  1. Validate required environment variables
- *  2. Initialise SQLite database
- *  3. Auto-register slash commands (if AUTO_DEPLOY_COMMANDS=true)
- *  4. Load static commands from commands/ directory
- *  5. Build domain-specific commands from DOMAIN_COMMANDS config
- *  6. Load events
- *  7. Log in to Discord
- *  8. On ready: record start time, start webhook server (if enabled)
+ * Starts one Discord client per configured token. All bots share the same:
+ *   - Slash commands (same handlers, same logic)
+ *   - SQLite database (aliases are global across bots)
+ *   - Webhook server (first bot's client handles DM delivery)
  *
- * Railway deployment:
- *   Set AUTO_DEPLOY_COMMANDS=true for the first deploy so slash commands
- *   register automatically. Set it back to false after — commands persist
- *   in Discord until you explicitly change them.
+ * Environment variable format:
+ *   DISCORD_BOT_TOKEN_1=...   DISCORD_CLIENT_ID_1=...   (bot 1)
+ *   DISCORD_BOT_TOKEN_2=...   DISCORD_CLIENT_ID_2=...   (bot 2)
+ *   DISCORD_BOT_TOKEN_3=...   DISCORD_CLIENT_ID_3=...   (bot 3, etc.)
+ *
+ * Backward compatible: if TOKEN_1/TOKEN_2 aren't set, falls back to the
+ * original DISCORD_BOT_TOKEN / DISCORD_CLIENT_ID single-bot variables.
+ *
+ * Optional per-bot variables:
+ *   DISCORD_GUILD_ID_1=...    — guild-scoped command registration for bot 1
+ *   DISCORD_GUILD_ID_2=...    — guild-scoped command registration for bot 2
+ *   (falls back to DISCORD_GUILD_ID if the numbered version isn't set)
+ *
+ * AUTO_DEPLOY_COMMANDS=true   — register slash commands for ALL bots at startup
  */
 
 import {
@@ -39,17 +44,64 @@ import { setClient, setBotStartTime } from './utils/clientStore.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ─── Validate required env vars before doing anything else ───────────────────
-const REQUIRED = ['DISCORD_BOT_TOKEN', 'DISCORD_CLIENT_ID'];
-for (const key of REQUIRED) {
-  if (!process.env[key]?.trim()) {
-    logger.error(`Missing required environment variable: ${key}`);
-    logger.error('Add it to your Railway Variables tab or Replit Secrets panel.');
-    process.exit(1);
+// ─── Collect bot configurations from env vars ─────────────────────────────────
+
+function collectBotConfigs() {
+  const configs = [];
+
+  // Numbered format: DISCORD_BOT_TOKEN_1, DISCORD_BOT_TOKEN_2, ...
+  for (let i = 1; i <= 20; i++) {
+    const token = process.env[`DISCORD_BOT_TOKEN_${i}`]?.trim();
+    const clientId = process.env[`DISCORD_CLIENT_ID_${i}`]?.trim();
+
+    if (!token && !clientId) break; // Stop at the first gap
+    if (!token || !clientId) {
+      logger.warn(`Bot ${i}: TOKEN and CLIENT_ID must both be set — skipping`);
+      continue;
+    }
+
+    configs.push({
+      index: i,
+      token,
+      clientId,
+      // Per-bot guild ID falls back to the global DISCORD_GUILD_ID
+      guildId:
+        process.env[`DISCORD_GUILD_ID_${i}`]?.trim() ||
+        process.env.DISCORD_GUILD_ID?.trim() ||
+        null,
+    });
   }
+
+  // Backward-compatible single-bot fallback (original variable names)
+  if (configs.length === 0) {
+    const token = process.env.DISCORD_BOT_TOKEN?.trim();
+    const clientId = process.env.DISCORD_CLIENT_ID?.trim();
+    if (token && clientId) {
+      configs.push({
+        index: 1,
+        token,
+        clientId,
+        guildId: process.env.DISCORD_GUILD_ID?.trim() || null,
+      });
+    }
+  }
+
+  return configs;
 }
 
-// ─── Initialise database ──────────────────────────────────────────────────────
+const botConfigs = collectBotConfigs();
+
+if (botConfigs.length === 0) {
+  logger.error('No valid bot configuration found.');
+  logger.error('Set DISCORD_BOT_TOKEN_1 + DISCORD_CLIENT_ID_1 (and optionally _2, _3, ...) in your variables.');
+  logger.error('Or use the legacy DISCORD_BOT_TOKEN + DISCORD_CLIENT_ID for a single bot.');
+  process.exit(1);
+}
+
+logger.info(`Found ${botConfigs.length} bot configuration(s)`);
+
+// ─── Initialise shared database ───────────────────────────────────────────────
+
 try {
   const dbPath = initDatabase();
   logger.info(`SQLite database: ${dbPath}`);
@@ -58,102 +110,123 @@ try {
   process.exit(1);
 }
 
-// ─── Auto-register slash commands (Railway first-deploy helper) ───────────────
-if (process.env.AUTO_DEPLOY_COMMANDS === 'true') {
-  logger.info('AUTO_DEPLOY_COMMANDS=true — registering slash commands now...');
-  try {
-    await registerCommands();
-    logger.info('Slash commands registered successfully.');
-  } catch (err) {
-    // Non-fatal: log the error but continue starting the bot
-    logger.error(`Slash command registration failed: ${err.message}`);
-  }
-}
+// ─── Load shared command definitions (done once, reused per bot) ──────────────
 
-// ─── Create Discord client ────────────────────────────────────────────────────
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
-});
-client.commands = new Collection();
-
-// Make the client available to utility modules (log channel, etc.)
-setClient(client);
-
-// ─── Load static commands ─────────────────────────────────────────────────────
 const commandsPath = join(__dirname, 'commands');
 const commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js'));
 
+// Load all static command modules
+const staticModules = [];
 for (const file of commandFiles) {
   const mod = await import(pathToFileURL(join(commandsPath, file)).href);
-  if ('data' in mod && 'execute' in mod) {
-    client.commands.set(mod.data.name, mod);
-    logger.info(`Loaded command: /${mod.data.name}`);
-  }
+  if ('data' in mod && 'execute' in mod) staticModules.push(mod);
 }
 
-// ─── Build domain-specific commands from DOMAIN_COMMANDS ─────────────────────
+// Build domain-specific command configs (shared across all bots)
 const domainCmds = getDomainCommands();
-for (const { prefix, domain } of domainCmds) {
-  if (client.commands.has(prefix)) {
-    logger.warn(`Domain command "/${prefix}" conflicts with a static command — skipping`);
-    continue;
+
+// ─── Auto-register slash commands for all bots ────────────────────────────────
+
+if (process.env.AUTO_DEPLOY_COMMANDS === 'true') {
+  logger.info('AUTO_DEPLOY_COMMANDS=true — registering slash commands for all bots...');
+  for (const config of botConfigs) {
+    try {
+      await registerCommandsForBot(config);
+    } catch (err) {
+      logger.error(`Bot ${config.index}: command registration failed — ${err.message}`);
+    }
   }
-  const capturedDomain = domain;
-  client.commands.set(prefix, {
-    data: new SlashCommandBuilder()
-      .setName(prefix)
-      .setDescription(`Generate an email address @${domain}`),
-    execute: (interaction) => handleGenerate(interaction, capturedDomain),
+}
+
+// ─── Start each bot instance ──────────────────────────────────────────────────
+
+const startedClients = [];
+
+for (const config of botConfigs) {
+  const client = await startBot(config);
+  startedClients.push(client);
+}
+
+// The first bot's client is used for webhook DM delivery and log channel
+setClient(startedClients[0]);
+
+// ─── Start webhook server after first bot is ready ────────────────────────────
+// (handled inside each bot's ready event — only the first bot starts it)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Helper: start a single bot instance
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function startBot(config) {
+  const { index, token, clientId, guildId } = config;
+  const tag = `[Bot ${index}]`;
+
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
   });
-  logger.info(`Loaded domain command: /${prefix} → @${domain}`);
+  client.commands = new Collection();
+  client._botIndex = index; // Store index for logging
+
+  // ── Load static commands ───────────────────────────────────────────────────
+  for (const mod of staticModules) {
+    client.commands.set(mod.data.name, mod);
+  }
+
+  // ── Load domain-specific commands ─────────────────────────────────────────
+  for (const { prefix, domain } of domainCmds) {
+    if (client.commands.has(prefix)) continue;
+    const capturedDomain = domain;
+    client.commands.set(prefix, {
+      data: new SlashCommandBuilder()
+        .setName(prefix)
+        .setDescription(`Generate an email address @${domain}`),
+      execute: (interaction) => handleGenerate(interaction, capturedDomain),
+    });
+  }
+
+  // ── Load events ────────────────────────────────────────────────────────────
+  const eventsPath = join(__dirname, 'events');
+  for (const file of readdirSync(eventsPath).filter((f) => f.endsWith('.js'))) {
+    const event = await import(pathToFileURL(join(eventsPath, file)).href);
+    if (event.once) {
+      client.once(event.name, (...args) => event.execute(...args, client));
+    } else {
+      client.on(event.name, (...args) => event.execute(...args, client));
+    }
+  }
+
+  // ── Log in ─────────────────────────────────────────────────────────────────
+  await client.login(token).catch((err) => {
+    logger.error(`${tag} Login failed: ${err.message}`);
+    // Don't exit — other bots should still start
+  });
+
+  // ── Post-ready: start webhook server on the FIRST bot only ────────────────
+  if (index === startedClients.length + 1 || startedClients.length === 0) {
+    client.once('ready', () => {
+      setBotStartTime();
+
+      if (process.env.ENABLE_WEBHOOK_SERVER === 'true') {
+        startWebhookServer(client);
+      } else {
+        logger.info(`${tag} Webhook server disabled (ENABLE_WEBHOOK_SERVER=true to enable)`);
+      }
+    });
+  }
+
+  logger.info(`${tag} Starting (client ID: ${clientId}${guildId ? `, guild: ${guildId}` : ', global'})`);
+  return client;
 }
 
-// ─── Load events ──────────────────────────────────────────────────────────────
-const eventsPath = join(__dirname, 'events');
-for (const file of readdirSync(eventsPath).filter((f) => f.endsWith('.js'))) {
-  const event = await import(pathToFileURL(join(eventsPath, file)).href);
-  if (event.once) {
-    client.once(event.name, (...args) => event.execute(...args, client));
-  } else {
-    client.on(event.name, (...args) => event.execute(...args, client));
-  }
-  logger.info(`Loaded event: ${event.name}`);
-}
+// ═══════════════════════════════════════════════════════════════════════════════
+// Helper: register slash commands for one bot
+// ═══════════════════════════════════════════════════════════════════════════════
 
-// ─── Log in ───────────────────────────────────────────────────────────────────
-client.login(process.env.DISCORD_BOT_TOKEN).catch((err) => {
-  logger.error(`Login failed: ${err.message}`);
-  process.exit(1);
-});
+async function registerCommandsForBot({ index, token, clientId, guildId }) {
+  const tag = `[Bot ${index}]`;
+  const commandsToRegister = staticModules.map((m) => m.data.toJSON());
 
-// ─── Post-ready setup ─────────────────────────────────────────────────────────
-client.once('ready', () => {
-  setBotStartTime();
-
-  if (process.env.ENABLE_WEBHOOK_SERVER === 'true') {
-    startWebhookServer(client);
-  } else {
-    logger.info('Webhook server disabled (set ENABLE_WEBHOOK_SERVER=true to enable)');
-  }
-});
-
-// ─── Slash command registration helper ───────────────────────────────────────
-/**
- * Collects all command definitions (static + domain-specific) and pushes them
- * to Discord via the REST API. Called at startup when AUTO_DEPLOY_COMMANDS=true.
- */
-async function registerCommands() {
-  const commandsToRegister = [];
-
-  // Static commands
-  const cmdFiles = readdirSync(join(__dirname, 'commands')).filter((f) => f.endsWith('.js'));
-  for (const file of cmdFiles) {
-    const mod = await import(pathToFileURL(join(join(__dirname, 'commands'), file)).href);
-    if ('data' in mod) commandsToRegister.push(mod.data.toJSON());
-  }
-
-  // Domain-specific commands
-  for (const { prefix, domain } of getDomainCommands()) {
+  for (const { prefix, domain } of domainCmds) {
     commandsToRegister.push(
       new SlashCommandBuilder()
         .setName(prefix)
@@ -162,24 +235,15 @@ async function registerCommands() {
     );
   }
 
-  const rest = new REST().setToken(process.env.DISCORD_BOT_TOKEN);
+  const rest = new REST().setToken(token);
 
-  if (process.env.DISCORD_GUILD_ID?.trim()) {
-    await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.DISCORD_CLIENT_ID,
-        process.env.DISCORD_GUILD_ID,
-      ),
-      { body: commandsToRegister },
-    );
-    logger.info(
-      `Registered ${commandsToRegister.length} commands to guild ${process.env.DISCORD_GUILD_ID}`,
-    );
+  if (guildId) {
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
+      body: commandsToRegister,
+    });
+    logger.info(`${tag} Registered ${commandsToRegister.length} commands to guild ${guildId}`);
   } else {
-    await rest.put(
-      Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
-      { body: commandsToRegister },
-    );
-    logger.info(`Registered ${commandsToRegister.length} commands globally`);
+    await rest.put(Routes.applicationCommands(clientId), { body: commandsToRegister });
+    logger.info(`${tag} Registered ${commandsToRegister.length} commands globally`);
   }
 }

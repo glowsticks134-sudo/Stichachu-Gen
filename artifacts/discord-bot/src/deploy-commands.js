@@ -1,11 +1,11 @@
 /**
- * Run this once to register all slash commands with Discord:
+ * Manual slash command registration script.
+ * Run once after changing commands or DOMAIN_COMMANDS:
  *   node src/deploy-commands.js
  *
- * Re-run whenever you add, rename, or remove commands, or change DOMAIN_COMMANDS.
- *
- * - Set DISCORD_GUILD_ID for instant guild-scoped deployment (dev)
- * - Remove DISCORD_GUILD_ID for global deployment (takes up to 1 hour)
+ * Registers commands for ALL configured bots (TOKEN_1, TOKEN_2, ...).
+ * Uses per-bot DISCORD_GUILD_ID_N for instant guild registration, or
+ * falls back to DISCORD_GUILD_ID, or deploys globally if neither is set.
  */
 
 import { REST, Routes, SlashCommandBuilder } from 'discord.js';
@@ -18,60 +18,84 @@ import { getDomainCommands } from './utils/domains.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// ─── Build command list ───────────────────────────────────────────────────────
+
 const commands = [];
 
-// ── Static commands ──────────────────────────────────────────────────────────
 const commandsPath = join(__dirname, 'commands');
-const commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js'));
-
-for (const file of commandFiles) {
+for (const file of readdirSync(commandsPath).filter((f) => f.endsWith('.js'))) {
   const mod = await import(pathToFileURL(join(commandsPath, file)).href);
   if ('data' in mod) {
     commands.push(mod.data.toJSON());
-    console.log(`Queued: /${mod.data.name}`);
+    console.log(`  Queued: /${mod.data.name}`);
   }
 }
 
-// ── Dynamic domain-specific commands ─────────────────────────────────────────
-const domainCmds = getDomainCommands();
-for (const { prefix, domain } of domainCmds) {
-  const cmd = new SlashCommandBuilder()
-    .setName(prefix)
-    .setDescription(`Generate an email address @${domain}`)
-    .toJSON();
-  commands.push(cmd);
-  console.log(`Queued: /${prefix} (@${domain})`);
+for (const { prefix, domain } of getDomainCommands()) {
+  commands.push(
+    new SlashCommandBuilder()
+      .setName(prefix)
+      .setDescription(`Generate an email address @${domain}`)
+      .toJSON(),
+  );
+  console.log(`  Queued: /${prefix} (@${domain})`);
 }
 
-if (commands.length === 0) {
-  console.error('No commands to deploy. Check your commands/ directory and DOMAIN_COMMANDS env var.');
-  process.exit(1);
-}
+console.log(`\nTotal commands: ${commands.length}\n`);
 
-// ── Deploy ────────────────────────────────────────────────────────────────────
-const rest = new REST().setToken(process.env.DISCORD_BOT_TOKEN);
+// ─── Collect bot configs ──────────────────────────────────────────────────────
 
-console.log(`\nDeploying ${commands.length} command(s)...`);
+function collectBotConfigs() {
+  const configs = [];
 
-try {
-  let data;
-  if (process.env.DISCORD_GUILD_ID) {
-    data = await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.DISCORD_CLIENT_ID,
-        process.env.DISCORD_GUILD_ID,
-      ),
-      { body: commands },
-    );
-    console.log(`✅ Deployed ${data.length} command(s) to guild ${process.env.DISCORD_GUILD_ID}`);
-  } else {
-    data = await rest.put(
-      Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
-      { body: commands },
-    );
-    console.log(`✅ Deployed ${data.length} command(s) globally`);
+  for (let i = 1; i <= 20; i++) {
+    const token = process.env[`DISCORD_BOT_TOKEN_${i}`]?.trim();
+    const clientId = process.env[`DISCORD_CLIENT_ID_${i}`]?.trim();
+    if (!token && !clientId) break;
+    if (!token || !clientId) { console.warn(`Bot ${i}: skipping — TOKEN or CLIENT_ID missing`); continue; }
+    configs.push({
+      index: i,
+      token,
+      clientId,
+      guildId: process.env[`DISCORD_GUILD_ID_${i}`]?.trim() || process.env.DISCORD_GUILD_ID?.trim() || null,
+    });
   }
-} catch (err) {
-  console.error('Deployment failed:', err.message);
+
+  // Fallback to legacy single-bot variables
+  if (configs.length === 0 && process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CLIENT_ID) {
+    configs.push({
+      index: 1,
+      token: process.env.DISCORD_BOT_TOKEN.trim(),
+      clientId: process.env.DISCORD_CLIENT_ID.trim(),
+      guildId: process.env.DISCORD_GUILD_ID?.trim() || null,
+    });
+  }
+
+  return configs;
+}
+
+const botConfigs = collectBotConfigs();
+
+if (botConfigs.length === 0) {
+  console.error('No bot configurations found. Set DISCORD_BOT_TOKEN_1 + DISCORD_CLIENT_ID_1.');
   process.exit(1);
+}
+
+// ─── Register for each bot ────────────────────────────────────────────────────
+
+for (const { index, token, clientId, guildId } of botConfigs) {
+  const rest = new REST().setToken(token);
+  console.log(`Deploying to Bot ${index} (${guildId ? `guild ${guildId}` : 'global'})...`);
+
+  try {
+    let data;
+    if (guildId) {
+      data = await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+    } else {
+      data = await rest.put(Routes.applicationCommands(clientId), { body: commands });
+    }
+    console.log(`✅ Bot ${index}: deployed ${data.length} commands\n`);
+  } catch (err) {
+    console.error(`❌ Bot ${index}: failed — ${err.message}\n`);
+  }
 }
