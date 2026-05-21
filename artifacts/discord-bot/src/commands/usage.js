@@ -1,6 +1,6 @@
 /**
  * /usage — Display the help embed showing all available commands.
- * Matches the style shown in the Memberk Emails bot screenshot.
+ * Updated to include /delete and /stats in the Manage section.
  */
 
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
@@ -13,8 +13,8 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   const domainCmds = getDomainCommands();
 
-  // Build the "Address Commands" section
-  const genLines = ['`/gen` \u2014 random'];
+  // Address Commands section
+  const genLines = ['`/gen` \u2014 random domain'];
   for (const { prefix, domain } of domainCmds) {
     genLines.push(`\`/${prefix}\` \u2014 @${domain}`);
   }
@@ -35,6 +35,8 @@ export async function execute(interaction) {
         name: 'Manage',
         value:
           '`/listmails` \u2014 list your addresses\n' +
+          '`/delete` \u2014 remove an address (with autocomplete)\n' +
+          '`/stats` \u2014 bot statistics\n' +
           '`/ping` \u2014 bot latency\n' +
           '`/usage` \u2014 show this message',
         inline: false,

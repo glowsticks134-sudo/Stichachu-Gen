@@ -1,11 +1,6 @@
 /**
  * SQLite database layer using Node.js 24's built-in node:sqlite module.
- *
- * No native compilation needed — node:sqlite is bundled with Node.js 22.5+
- * and is stable (unflagged) in Node.js 24.
- *
- * Schema:
- *   aliases  — one row per email alias, keyed by the Discord user ID
+ * No native compilation needed — bundled with Node.js 22.5+.
  */
 
 import { DatabaseSync } from 'node:sqlite';
@@ -21,17 +16,11 @@ const DB_PATH = join(DATA_DIR, 'aliases.db');
 
 let db;
 
-/**
- * Initialise the database and run any pending migrations.
- * Call once at startup before using any other function.
- */
 export function initDatabase() {
   mkdirSync(DATA_DIR, { recursive: true });
-
   db = new DatabaseSync(DB_PATH);
   db.exec('PRAGMA journal_mode = WAL;');
 
-  // Create the table if it doesn't exist (initial schema)
   db.exec(`
     CREATE TABLE IF NOT EXISTS aliases (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,14 +33,10 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_aliases_user ON aliases (discord_user_id);
   `);
 
-  // Migration: add domain column if it doesn't already exist
-  const columns = db
-    .prepare("PRAGMA table_info(aliases)")
-    .all()
-    .map((c) => c.name);
-
-  if (!columns.includes('domain')) {
-    db.exec("ALTER TABLE aliases ADD COLUMN domain TEXT;");
+  // Migration: add domain column if missing
+  const cols = db.prepare('PRAGMA table_info(aliases)').all().map((c) => c.name);
+  if (!cols.includes('domain')) {
+    db.exec('ALTER TABLE aliases ADD COLUMN domain TEXT;');
   }
 }
 
@@ -60,23 +45,14 @@ function getDb() {
   return db;
 }
 
-/**
- * Insert a new alias record.
- */
 export function createAlias({ discordUserId, aliasEmail, domain = null, providerId = null }) {
-  const stmt = getDb().prepare(`
-    INSERT INTO aliases (discord_user_id, alias_email, domain, provider_id)
-    VALUES (?, ?, ?, ?)
-  `);
+  const stmt = getDb().prepare(
+    'INSERT INTO aliases (discord_user_id, alias_email, domain, provider_id) VALUES (?, ?, ?, ?)',
+  );
   const result = stmt.run(discordUserId, aliasEmail, domain, providerId);
-  return getDb()
-    .prepare('SELECT * FROM aliases WHERE id = ?')
-    .get(result.lastInsertRowid);
+  return getDb().prepare('SELECT * FROM aliases WHERE id = ?').get(result.lastInsertRowid);
 }
 
-/**
- * Fetch all active aliases for a Discord user, newest first.
- */
 export function getAliasesByUser(discordUserId) {
   return getDb()
     .prepare(
@@ -87,47 +63,63 @@ export function getAliasesByUser(discordUserId) {
     .all(discordUserId);
 }
 
-/**
- * Fetch a single alias record by its email address (any status).
- */
 export function getAliasByEmail(aliasEmail) {
-  return getDb()
-    .prepare('SELECT * FROM aliases WHERE alias_email = ?')
-    .get(aliasEmail);
+  return getDb().prepare('SELECT * FROM aliases WHERE alias_email = ?').get(aliasEmail);
 }
 
-/**
- * Count active aliases owned by a user.
- */
 export function countActiveAliases(discordUserId) {
-  const row = getDb()
-    .prepare(
-      `SELECT COUNT(*) AS total FROM aliases
-       WHERE discord_user_id = ? AND status = 'active'`,
-    )
-    .get(discordUserId);
-  return row.total;
+  return getDb()
+    .prepare(`SELECT COUNT(*) AS n FROM aliases WHERE discord_user_id = ? AND status = 'active'`)
+    .get(discordUserId).n;
 }
 
-/**
- * Soft-delete an alias. Returns true if a row was updated.
- */
 export function deleteAlias(aliasEmail, discordUserId) {
   const result = getDb()
     .prepare(
-      `UPDATE aliases SET status = 'deleted'
-       WHERE alias_email = ? AND discord_user_id = ?`,
+      `UPDATE aliases SET status = 'deleted' WHERE alias_email = ? AND discord_user_id = ?`,
     )
     .run(aliasEmail, discordUserId);
   return result.changes > 0;
 }
 
-/**
- * Check whether an alias email already exists (any status).
- */
 export function aliasExists(aliasEmail) {
-  const row = getDb()
-    .prepare('SELECT 1 FROM aliases WHERE alias_email = ?')
-    .get(aliasEmail);
-  return !!row;
+  return !!getDb().prepare('SELECT 1 FROM aliases WHERE alias_email = ?').get(aliasEmail);
+}
+
+/**
+ * Aggregate statistics used by the /stats command.
+ */
+export function getStats() {
+  const d = getDb();
+
+  const totalActive = d
+    .prepare(`SELECT COUNT(*) AS n FROM aliases WHERE status = 'active'`)
+    .get().n;
+
+  const totalAllTime = d.prepare(`SELECT COUNT(*) AS n FROM aliases`).get().n;
+
+  const uniqueUsers = d
+    .prepare(`SELECT COUNT(DISTINCT discord_user_id) AS n FROM aliases WHERE status = 'active'`)
+    .get().n;
+
+  const last24h = d
+    .prepare(
+      `SELECT COUNT(*) AS n FROM aliases
+       WHERE status = 'active'
+         AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ', datetime('now', '-1 day'))`,
+    )
+    .get().n;
+
+  // Top 5 domains by active alias count
+  const byDomain = d
+    .prepare(
+      `SELECT domain, COUNT(*) AS n FROM aliases
+       WHERE status = 'active' AND domain IS NOT NULL
+       GROUP BY domain
+       ORDER BY n DESC
+       LIMIT 5`,
+    )
+    .all();
+
+  return { totalActive, totalAllTime, uniqueUsers, last24h, byDomain };
 }

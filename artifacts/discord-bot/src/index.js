@@ -7,7 +7,7 @@
  *  3. Load events
  *  4. Initialise SQLite database
  *  5. Log in to Discord
- *  6. Start the webhook HTTP server (for email-to-DM delivery)
+ *  6. On ready: store client reference, set start time, start webhook server
  */
 
 import { Client, GatewayIntentBits, Collection, SlashCommandBuilder } from 'discord.js';
@@ -20,15 +20,21 @@ import { initDatabase } from './utils/database.js';
 import { getDomainCommands } from './utils/domains.js';
 import { handleGenerate } from './utils/aliasGenerator.js';
 import { startWebhookServer } from './server.js';
+import { setClient, setBotStartTime } from './utils/clientStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Create the Discord client
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] });
+// Create client with DMs intent so we can deliver emails
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
+});
 client.commands = new Collection();
 
-// ─── Load Static Commands ──────────────────────────────────────────────────
+// Store the client globally so utility modules can access it
+setClient(client);
+
+// ─── Load Static Commands ─────────────────────────────────────────────────────
 const commandsPath = join(__dirname, 'commands');
 const commandFiles = readdirSync(commandsPath).filter((f) => f.endsWith('.js'));
 
@@ -40,33 +46,26 @@ for (const file of commandFiles) {
   }
 }
 
-// ─── Load Domain-Specific Commands Dynamically ────────────────────────────
-// Each entry in DOMAIN_COMMANDS (e.g. "lgen:larpers.cc") becomes a slash
-// command that generates an alias on that specific domain.
+// ─── Load Domain-Specific Commands Dynamically ───────────────────────────────
 const domainCmds = getDomainCommands();
 
 for (const { prefix, domain } of domainCmds) {
-  // Skip if a static command already has this name
   if (client.commands.has(prefix)) {
     logger.warn(`Domain command "/${prefix}" conflicts with a static command — skipping`);
     continue;
   }
 
-  // Capture domain in a closure for the execute function
   const capturedDomain = domain;
-
-  const dynamicCommand = {
+  client.commands.set(prefix, {
     data: new SlashCommandBuilder()
       .setName(prefix)
       .setDescription(`Generate an email address @${domain}`),
     execute: (interaction) => handleGenerate(interaction, capturedDomain),
-  };
-
-  client.commands.set(prefix, dynamicCommand);
+  });
   logger.info(`Loaded domain command: /${prefix} → @${domain}`);
 }
 
-// ─── Load Events ──────────────────────────────────────────────────────────
+// ─── Load Events ─────────────────────────────────────────────────────────────
 const eventsPath = join(__dirname, 'events');
 const eventFiles = readdirSync(eventsPath).filter((f) => f.endsWith('.js'));
 
@@ -80,7 +79,7 @@ for (const file of eventFiles) {
   logger.info(`Loaded event: ${event.name}`);
 }
 
-// ─── Initialise Database ──────────────────────────────────────────────────
+// ─── Initialise Database ──────────────────────────────────────────────────────
 try {
   initDatabase();
   logger.info('SQLite database initialised');
@@ -89,7 +88,7 @@ try {
   process.exit(1);
 }
 
-// ─── Validate Required Env Vars ──────────────────────────────────────────
+// ─── Validate Required Env Vars ───────────────────────────────────────────────
 for (const key of ['DISCORD_BOT_TOKEN', 'DISCORD_CLIENT_ID']) {
   if (!process.env[key]) {
     logger.error(`Missing required environment variable: ${key}`);
@@ -97,15 +96,18 @@ for (const key of ['DISCORD_BOT_TOKEN', 'DISCORD_CLIENT_ID']) {
   }
 }
 
-// ─── Log In ───────────────────────────────────────────────────────────────
+// ─── Log In ───────────────────────────────────────────────────────────────────
 client.login(process.env.DISCORD_BOT_TOKEN).catch((err) => {
   logger.error(`Login failed: ${err.message}`);
   process.exit(1);
 });
 
-// ─── Start Webhook Server After Login ─────────────────────────────────────
-// We wait for the "ready" event so the client is available for DMs
+// ─── Post-ready setup ─────────────────────────────────────────────────────────
 client.once('ready', () => {
+  // Record uptime start for /stats
+  setBotStartTime();
+
+  // Start the optional webhook server for email-to-DM delivery
   if (process.env.ENABLE_WEBHOOK_SERVER === 'true') {
     startWebhookServer(client);
   } else {
