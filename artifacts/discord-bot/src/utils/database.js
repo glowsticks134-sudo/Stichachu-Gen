@@ -2,9 +2,9 @@
  * SQLite database layer using Node.js 24's built-in node:sqlite module.
  * No native compilation needed — bundled with Node.js 22.5+.
  *
- * DATABASE_PATH env var controls where the .db file lives.
- * On Railway: mount a Volume at /data and set DATABASE_PATH=/data/aliases.db
- * so data survives redeploys. Without a volume the file sits in data/ locally.
+ * Tables:
+ *   aliases          — email alias records per Discord user
+ *   allowed_channels — per-guild channel allowlist for email generation commands
  */
 
 import { DatabaseSync } from 'node:sqlite';
@@ -15,12 +15,8 @@ import { mkdirSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Resolve the database file path.
-// Priority: DATABASE_PATH env var → default local data/ folder
 function resolveDbPath() {
-  if (process.env.DATABASE_PATH && process.env.DATABASE_PATH.trim()) {
-    return process.env.DATABASE_PATH.trim();
-  }
+  if (process.env.DATABASE_PATH?.trim()) return process.env.DATABASE_PATH.trim();
   return join(__dirname, '../../data/aliases.db');
 }
 
@@ -28,14 +24,13 @@ let db;
 
 export function initDatabase() {
   const dbPath = resolveDbPath();
-
-  // Ensure the parent directory exists (important for Railway volume paths)
   const dir = dbPath.substring(0, dbPath.lastIndexOf('/'));
   if (dir) mkdirSync(dir, { recursive: true });
 
   db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL;');
 
+  // Core alias table
   db.exec(`
     CREATE TABLE IF NOT EXISTS aliases (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,13 +43,20 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_aliases_user ON aliases (discord_user_id);
   `);
 
-  // Migration: add domain column if missing (for databases created before this column existed)
-  const cols = db.prepare('PRAGMA table_info(aliases)').all().map((c) => c.name);
-  if (!cols.includes('domain')) {
-    db.exec('ALTER TABLE aliases ADD COLUMN domain TEXT;');
-  }
+  // Channel allowlist: stores which channels are allowed per guild
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS allowed_channels (
+      guild_id   TEXT NOT NULL,
+      channel_id TEXT NOT NULL,
+      PRIMARY KEY (guild_id, channel_id)
+    );
+  `);
 
-  return dbPath; // Return so index.js can log the active path
+  // Migration: add domain column if missing
+  const cols = db.prepare('PRAGMA table_info(aliases)').all().map((c) => c.name);
+  if (!cols.includes('domain')) db.exec('ALTER TABLE aliases ADD COLUMN domain TEXT;');
+
+  return dbPath;
 }
 
 function getDb() {
@@ -62,21 +64,18 @@ function getDb() {
   return db;
 }
 
+// ─── Alias CRUD ───────────────────────────────────────────────────────────────
+
 export function createAlias({ discordUserId, aliasEmail, domain = null, providerId = null }) {
-  const stmt = getDb().prepare(
-    'INSERT INTO aliases (discord_user_id, alias_email, domain, provider_id) VALUES (?, ?, ?, ?)',
-  );
-  const result = stmt.run(discordUserId, aliasEmail, domain, providerId);
+  const result = getDb()
+    .prepare('INSERT INTO aliases (discord_user_id, alias_email, domain, provider_id) VALUES (?, ?, ?, ?)')
+    .run(discordUserId, aliasEmail, domain, providerId);
   return getDb().prepare('SELECT * FROM aliases WHERE id = ?').get(result.lastInsertRowid);
 }
 
 export function getAliasesByUser(discordUserId) {
   return getDb()
-    .prepare(
-      `SELECT * FROM aliases
-       WHERE discord_user_id = ? AND status = 'active'
-       ORDER BY created_at DESC`,
-    )
+    .prepare(`SELECT * FROM aliases WHERE discord_user_id = ? AND status = 'active' ORDER BY created_at DESC`)
     .all(discordUserId);
 }
 
@@ -91,17 +90,83 @@ export function countActiveAliases(discordUserId) {
 }
 
 export function deleteAlias(aliasEmail, discordUserId) {
-  const result = getDb()
-    .prepare(
-      `UPDATE aliases SET status = 'deleted' WHERE alias_email = ? AND discord_user_id = ?`,
-    )
-    .run(aliasEmail, discordUserId);
-  return result.changes > 0;
+  return getDb()
+    .prepare(`UPDATE aliases SET status = 'deleted' WHERE alias_email = ? AND discord_user_id = ?`)
+    .run(aliasEmail, discordUserId).changes > 0;
 }
 
 export function aliasExists(aliasEmail) {
   return !!getDb().prepare('SELECT 1 FROM aliases WHERE alias_email = ?').get(aliasEmail);
 }
+
+// ─── Allowed Channels ─────────────────────────────────────────────────────────
+
+/**
+ * Add a channel to the guild's generation allowlist.
+ * INSERT OR IGNORE so duplicates are silently skipped.
+ */
+export function addAllowedChannel(guildId, channelId) {
+  getDb()
+    .prepare('INSERT OR IGNORE INTO allowed_channels (guild_id, channel_id) VALUES (?, ?)')
+    .run(guildId, channelId);
+}
+
+/**
+ * Remove a channel from the guild's allowlist.
+ * Returns true if a row was removed.
+ */
+export function removeAllowedChannel(guildId, channelId) {
+  return getDb()
+    .prepare('DELETE FROM allowed_channels WHERE guild_id = ? AND channel_id = ?')
+    .run(guildId, channelId).changes > 0;
+}
+
+/**
+ * Clear the entire allowlist for a guild (go back to "allow all channels").
+ * Returns how many rows were deleted.
+ */
+export function clearAllowedChannels(guildId) {
+  return getDb()
+    .prepare('DELETE FROM allowed_channels WHERE guild_id = ?')
+    .run(guildId).changes;
+}
+
+/**
+ * Fetch all channel IDs in the allowlist for a guild.
+ * @returns {string[]}
+ */
+export function getAllowedChannels(guildId) {
+  return getDb()
+    .prepare('SELECT channel_id FROM allowed_channels WHERE guild_id = ?')
+    .all(guildId)
+    .map((r) => r.channel_id);
+}
+
+/**
+ * Check whether a channel is allowed for email generation in a guild.
+ *
+ * Rules:
+ *   - If the allowlist is EMPTY → every channel is allowed (default open)
+ *   - If the allowlist has entries → only those channels are allowed
+ *
+ * @returns {boolean}
+ */
+export function isChannelAllowed(guildId, channelId) {
+  const count = getDb()
+    .prepare('SELECT COUNT(*) AS n FROM allowed_channels WHERE guild_id = ?')
+    .get(guildId).n;
+
+  // No restrictions configured — allow everywhere
+  if (count === 0) return true;
+
+  // Check if this specific channel is in the list
+  const row = getDb()
+    .prepare('SELECT 1 FROM allowed_channels WHERE guild_id = ? AND channel_id = ?')
+    .get(guildId, channelId);
+  return !!row;
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
 
 export function getStats() {
   const d = getDb();

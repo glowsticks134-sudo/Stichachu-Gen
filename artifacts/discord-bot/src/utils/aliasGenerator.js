@@ -1,23 +1,20 @@
 /**
  * Shared alias generation logic used by /gen and all domain-specific commands.
  *
- * Improvements over the original:
- *  - Near-limit warning when the user has used ≥80% of their quota
- *  - Log channel notification on every creation
- *  - Larger word lists for better randomness
+ * Changes:
+ *  - No cooldowns (removed by user request)
+ *  - Default limit raised to 20
+ *  - Channel allowlist check before generating
  */
 
 import { EmbedBuilder, Colors } from 'discord.js';
-import { createAlias, countActiveAliases, aliasExists } from './database.js';
-import { checkCooldown, setCooldown } from './cooldowns.js';
+import { createAlias, countActiveAliases, aliasExists, isChannelAllowed } from './database.js';
 import { logger } from './logger.js';
 import { sendLogMessage } from './logChannel.js';
 
-const COOLDOWN_SECS = 30;
-const MAX_ALIASES = parseInt(process.env.MAX_ALIASES_PER_USER ?? '10', 10);
+const MAX_ALIASES = parseInt(process.env.MAX_ALIASES_PER_USER ?? '20', 10);
 const MAX_RETRIES = 8;
 
-// Larger word lists → more unique combinations, lower collision chance
 const ADJECTIVES = [
   'swift', 'bright', 'calm', 'bold', 'keen', 'pure', 'vast', 'wise',
   'cool', 'dark', 'fair', 'free', 'glad', 'gold', 'good', 'gray',
@@ -44,7 +41,6 @@ function generatePrefix() {
   return `${adj}${noun}${num}`;
 }
 
-/** Returns a colour based on how full the user's quota is. */
 function quotaColor(used, max) {
   const pct = used / max;
   if (pct >= 0.9) return Colors.Red;
@@ -67,23 +63,32 @@ export function timeAgo(isoString) {
 }
 
 /**
- * Core alias generation handler — used by /gen and all domain-specific commands.
+ * Core alias generation handler.
  *
  * @param {import('discord.js').ChatInputCommandInteraction} interaction
  * @param {string} domain
  */
 export async function handleGenerate(interaction, domain) {
   const userId = interaction.user.id;
+  const guildId = interaction.guildId;
+  const channelId = interaction.channelId;
 
-  // ── 1. Cooldown ────────────────────────────────────────────────────────────
-  const { onCooldown, remainingSecs } = checkCooldown('gen', userId, COOLDOWN_SECS);
-  if (onCooldown) {
+  // ── 1. Channel allowlist check ─────────────────────────────────────────────
+  // Only enforced inside a server (not in DMs)
+  if (guildId && !isChannelAllowed(guildId, channelId)) {
+    const { getAllowedChannels } = await import('./database.js');
+    const channelIds = getAllowedChannels(guildId);
+    const mentions = channelIds.map((id) => `<#${id}>`).join(', ');
+
     return interaction.reply({
       embeds: [
         new EmbedBuilder()
-          .setColor(Colors.Orange)
-          .setTitle('⏳ Slow down!')
-          .setDescription(`You can generate another address in **${remainingSecs}s**.`),
+          .setColor(Colors.Red)
+          .setTitle('❌ Wrong channel')
+          .setDescription(
+            `Email generation is restricted to specific channels in this server.\n\n` +
+            `**Allowed:** ${mentions || 'None set'}`,
+          ),
       ],
       ephemeral: true,
     });
@@ -107,7 +112,6 @@ export async function handleGenerate(interaction, domain) {
   }
 
   await interaction.deferReply({ ephemeral: true });
-  setCooldown('gen', userId);
 
   // ── 3. Generate unique prefix ──────────────────────────────────────────────
   let aliasEmail = null;
@@ -146,14 +150,12 @@ export async function handleGenerate(interaction, domain) {
     ],
   });
 
-  // ── 6. Build success reply ─────────────────────────────────────────────────
+  // ── 6. Success reply ───────────────────────────────────────────────────────
   const newCount = count + 1;
   const color = quotaColor(newCount, MAX_ALIASES);
-
-  // Near-limit warning (at 80% capacity)
   const nearLimitNote =
     newCount / MAX_ALIASES >= 0.8
-      ? `\n⚠️ You're at **${newCount}/${MAX_ALIASES}** — running low! Use \`/delete\` to free up slots.`
+      ? `\n⚠️ You're at **${newCount}/${MAX_ALIASES}** — running low. Use \`/delete\` to free up slots.`
       : '';
 
   return interaction.editReply({
@@ -166,9 +168,7 @@ export async function handleGenerate(interaction, domain) {
           { name: 'Domain', value: `@${domain}`, inline: true },
           { name: 'Your addresses', value: `${newCount} / ${MAX_ALIASES}`, inline: true },
         )
-        .setFooter({
-          text: 'Emails sent here arrive in your DMs • /listmails to see all',
-        })
+        .setFooter({ text: 'Emails sent here arrive in your DMs • /listmails to see all' })
         .setTimestamp(),
     ],
   });

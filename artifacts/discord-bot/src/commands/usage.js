@@ -1,6 +1,5 @@
 /**
  * /usage — Display the help embed showing all available commands.
- * Updated to include /delete and /stats in the Manage section.
  */
 
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
@@ -13,7 +12,6 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   const domainCmds = getDomainCommands();
 
-  // Address Commands section
   const genLines = ['`/gen` \u2014 random domain'];
   for (const { prefix, domain } of domainCmds) {
     genLines.push(`\`/${prefix}\` \u2014 @${domain}`);
@@ -35,10 +33,19 @@ export async function execute(interaction) {
         name: 'Manage',
         value:
           '`/listmails` \u2014 list your addresses\n' +
-          '`/delete` \u2014 remove an address (with autocomplete)\n' +
+          '`/delete` \u2014 remove an address (autocomplete)\n' +
           '`/stats` \u2014 bot statistics\n' +
           '`/ping` \u2014 bot latency\n' +
           '`/usage` \u2014 show this message',
+        inline: false,
+      },
+      {
+        name: 'Admin',
+        value:
+          '`/setchannels add` \u2014 restrict generation to a channel\n' +
+          '`/setchannels remove` \u2014 remove a channel restriction\n' +
+          '`/setchannels list` \u2014 view allowed channels\n' +
+          '`/setchannels clear` \u2014 allow all channels again',
         inline: false,
       },
       {

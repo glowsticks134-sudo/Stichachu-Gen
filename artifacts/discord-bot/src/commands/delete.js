@@ -1,25 +1,14 @@
 /**
  * /delete — Remove one of the calling user's email aliases.
  *
- * Uses Discord's autocomplete API so your own aliases appear as suggestions
- * the moment you start typing — no need to remember the exact address.
- *
- * The alias is soft-deleted in the database. The bot will no longer deliver
- * emails sent to that address, but the catch-all route on your mail provider
- * will still receive them (they just get silently dropped on our end).
+ * Uses Discord's autocomplete API so aliases appear as suggestions while typing.
+ * No cooldown.
  */
 
-import {
-  SlashCommandBuilder,
-  EmbedBuilder,
-  Colors,
-} from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, Colors } from 'discord.js';
 import { getAliasesByUser, deleteAlias, getAliasByEmail } from '../utils/database.js';
-import { checkCooldown, setCooldown } from '../utils/cooldowns.js';
 import { logger } from '../utils/logger.js';
 import { sendLogMessage } from '../utils/logChannel.js';
-
-const COOLDOWN_SECS = 10;
 
 export const data = new SlashCommandBuilder()
   .setName('delete')
@@ -32,45 +21,23 @@ export const data = new SlashCommandBuilder()
       .setAutocomplete(true),
   );
 
-/**
- * Autocomplete handler — called by Discord as the user types in the alias field.
- * Returns up to 25 of the user's active aliases that match the current input.
- */
+/** Autocomplete — returns user's active aliases matching the current input */
 export async function autocomplete(interaction) {
   const focused = interaction.options.getFocused().toLowerCase();
-  const userId = interaction.user.id;
-  const aliases = getAliasesByUser(userId);
+  const aliases = getAliasesByUser(interaction.user.id);
 
-  const matches = aliases
-    .filter((a) => a.alias_email.includes(focused))
-    .slice(0, 25) // Discord max
-    .map((a) => ({
-      name: a.alias_email,
-      value: a.alias_email,
-    }));
-
-  await interaction.respond(matches);
+  await interaction.respond(
+    aliases
+      .filter((a) => a.alias_email.includes(focused))
+      .slice(0, 25)
+      .map((a) => ({ name: a.alias_email, value: a.alias_email })),
+  );
 }
 
-/** Slash command execute handler */
 export async function execute(interaction) {
   const userId = interaction.user.id;
   const targetAlias = interaction.options.getString('alias').toLowerCase().trim();
 
-  // ── Cooldown ───────────────────────────────────────────────────────────────
-  const { onCooldown, remainingSecs } = checkCooldown('delete', userId, COOLDOWN_SECS);
-  if (onCooldown) {
-    return interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(Colors.Orange)
-          .setDescription(`⏳ Please wait **${remainingSecs}s** before deleting another address.`),
-      ],
-      ephemeral: true,
-    });
-  }
-
-  // ── Validate alias exists ──────────────────────────────────────────────────
   const record = getAliasByEmail(targetAlias);
 
   if (!record) {
@@ -79,16 +46,12 @@ export async function execute(interaction) {
         new EmbedBuilder()
           .setColor(Colors.Red)
           .setTitle('❌ Not found')
-          .setDescription(
-            `\`${targetAlias}\` was not found.\n` +
-            'Use `/listmails` to see your current addresses.',
-          ),
+          .setDescription(`\`${targetAlias}\` was not found.\nUse \`/listmails\` to see your addresses.`),
       ],
       ephemeral: true,
     });
   }
 
-  // ── Ownership check ────────────────────────────────────────────────────────
   if (record.discord_user_id !== userId) {
     return interaction.reply({
       embeds: [
@@ -112,13 +75,9 @@ export async function execute(interaction) {
     });
   }
 
-  setCooldown('delete', userId);
-
-  // ── Soft-delete in database ────────────────────────────────────────────────
   deleteAlias(targetAlias, userId);
   logger.alias('deleted', userId, targetAlias);
 
-  // ── Log channel notification ───────────────────────────────────────────────
   await sendLogMessage({
     color: Colors.Red,
     title: '🗑️ Alias Deleted',
