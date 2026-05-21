@@ -13,7 +13,7 @@ export function execute(client) {
   logger.info(`Logged in as ${client.user.tag}`);
 
   // Set a visible status in the Discord member list
-  client.user.setActivity('/createemail to get started', {
+  client.user.setActivity('/usage for commands', {
     type: ActivityType.Listening,
   });
 }

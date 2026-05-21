@@ -6,9 +6,6 @@
  *
  * Schema:
  *   aliases  — one row per email alias, keyed by the Discord user ID
- *
- * The API is synchronous (similar to better-sqlite3), which is fine for a
- * bot that handles one slash-command interaction at a time.
  */
 
 import { DatabaseSync } from 'node:sqlite';
@@ -19,25 +16,22 @@ import { mkdirSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Store the database file in the data/ directory (gitignored)
 const DATA_DIR = join(__dirname, '../../data');
 const DB_PATH = join(DATA_DIR, 'aliases.db');
 
 let db;
 
 /**
- * Initialise the database connection and create the table if it doesn't exist.
- * Call this once at startup before using any other function.
+ * Initialise the database and run any pending migrations.
+ * Call once at startup before using any other function.
  */
 export function initDatabase() {
-  // Ensure the data directory exists
   mkdirSync(DATA_DIR, { recursive: true });
 
   db = new DatabaseSync(DB_PATH);
+  db.exec('PRAGMA journal_mode = WAL;');
 
-  // Enable WAL mode for better concurrent read performance
-  db.exec("PRAGMA journal_mode = WAL;");
-
+  // Create the table if it doesn't exist (initial schema)
   db.exec(`
     CREATE TABLE IF NOT EXISTS aliases (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,12 +41,19 @@ export function initDatabase() {
       created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
       status          TEXT    NOT NULL DEFAULT 'active'
     );
-
     CREATE INDEX IF NOT EXISTS idx_aliases_user ON aliases (discord_user_id);
   `);
-}
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+  // Migration: add domain column if it doesn't already exist
+  const columns = db
+    .prepare("PRAGMA table_info(aliases)")
+    .all()
+    .map((c) => c.name);
+
+  if (!columns.includes('domain')) {
+    db.exec("ALTER TABLE aliases ADD COLUMN domain TEXT;");
+  }
+}
 
 function getDb() {
   if (!db) throw new Error('Database not initialised — call initDatabase() first');
@@ -61,21 +62,20 @@ function getDb() {
 
 /**
  * Insert a new alias record.
- * @returns {object} The inserted row
  */
-export function createAlias({ discordUserId, aliasEmail, providerId = null }) {
+export function createAlias({ discordUserId, aliasEmail, domain = null, providerId = null }) {
   const stmt = getDb().prepare(`
-    INSERT INTO aliases (discord_user_id, alias_email, provider_id)
-    VALUES (?, ?, ?)
+    INSERT INTO aliases (discord_user_id, alias_email, domain, provider_id)
+    VALUES (?, ?, ?, ?)
   `);
-  const result = stmt.run(discordUserId, aliasEmail, providerId);
+  const result = stmt.run(discordUserId, aliasEmail, domain, providerId);
   return getDb()
     .prepare('SELECT * FROM aliases WHERE id = ?')
     .get(result.lastInsertRowid);
 }
 
 /**
- * Fetch all active aliases for a Discord user.
+ * Fetch all active aliases for a Discord user, newest first.
  */
 export function getAliasesByUser(discordUserId) {
   return getDb()
@@ -88,7 +88,7 @@ export function getAliasesByUser(discordUserId) {
 }
 
 /**
- * Fetch a single alias by its email address.
+ * Fetch a single alias record by its email address (any status).
  */
 export function getAliasByEmail(aliasEmail) {
   return getDb()
@@ -97,7 +97,7 @@ export function getAliasByEmail(aliasEmail) {
 }
 
 /**
- * Count how many active aliases a user currently owns.
+ * Count active aliases owned by a user.
  */
 export function countActiveAliases(discordUserId) {
   const row = getDb()
@@ -110,8 +110,7 @@ export function countActiveAliases(discordUserId) {
 }
 
 /**
- * Mark an alias as deleted (soft delete so we retain history).
- * Returns true if a row was updated, false if nothing matched.
+ * Soft-delete an alias. Returns true if a row was updated.
  */
 export function deleteAlias(aliasEmail, discordUserId) {
   const result = getDb()
@@ -124,7 +123,7 @@ export function deleteAlias(aliasEmail, discordUserId) {
 }
 
 /**
- * Check whether an alias email already exists in the database (any status).
+ * Check whether an alias email already exists (any status).
  */
 export function aliasExists(aliasEmail) {
   const row = getDb()

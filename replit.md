@@ -1,74 +1,77 @@
-# Discord Email Alias Bot
+# Memberk Emails — Discord Bot
 
-A Discord bot that lets users generate, manage, and delete disposable email aliases on a custom domain via slash commands.
+A Discord bot that generates disposable email aliases on custom domains and delivers incoming emails to users via Discord DM.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/discord-bot run start` — start the Discord bot
-- `pnpm --filter @workspace/discord-bot run deploy-commands` — register slash commands with Discord (run once after setup, or after adding commands)
-- Required env: see `.env.example` in `artifacts/discord-bot/`
+- **Start bot**: `pnpm --filter @workspace/discord-bot run start`
+- **Register commands**: `pnpm --filter @workspace/discord-bot run deploy-commands`
+  - Run once after setup, and again whenever you change `DOMAIN_COMMANDS`
+  - Set `DISCORD_GUILD_ID` in Secrets for instant registration during development
+
+## Required Secrets (add in Replit Secrets panel)
+
+| Key | Description |
+|---|---|
+| `DISCORD_BOT_TOKEN` | From discord.com/developers → your app → Bot → Reset Token |
+| `DISCORD_CLIENT_ID` | From discord.com/developers → your app → General Information |
+| `DISCORD_GUILD_ID` | Your test server ID (for instant command registration) |
+| `DOMAIN_COMMANDS` | e.g. `lgen:larpers.cc,ngen:nachtmail.online` |
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `/gen` | Generate address on a random domain |
+| `/lgen`, `/ngen`, ... | Generate on a specific domain (configured via `DOMAIN_COMMANDS`) |
+| `/listmails` | List all your active addresses (private/ephemeral) |
+| `/ping` | Bot latency |
+| `/usage` | Show all commands |
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, ES Modules
-- Discord: discord.js v14, slash commands, ephemeral embeds
-- DB: Node.js built-in `node:sqlite` (no native compilation needed)
-- HTTP: axios (for SimpleLogin / Cloudflare API calls)
-- Provider support: SimpleLogin API, Cloudflare Email Routing, or Local (catch-all)
+- Node.js 24, ES Modules, discord.js v14
+- SQLite via `node:sqlite` (Node.js built-in — no native compilation)
+- Express + multer for email webhook delivery server
+- No external database required
 
 ## Where things live
 
 ```
 artifacts/discord-bot/
   src/
-    index.js              — entry point, loads commands + events
-    deploy-commands.js    — one-time slash command registration
+    index.js                  — startup: loads commands, events, DB, webhook server
+    deploy-commands.js        — one-time slash command registration script
     commands/
-      createemail.js      — /createemail
-      myemails.js         — /myemails
-      deleteemail.js      — /deleteemail
-      emailinfo.js        — /emailinfo
+      gen.js                  — /gen (random domain)
+      listmails.js            — /listmails
+      ping.js                 — /ping
+      usage.js                — /usage (help embed)
     events/
-      ready.js            — fires once on login
-      interactionCreate.js — command dispatcher
+      ready.js                — fires on login
+      interactionCreate.js    — command dispatcher
     utils/
-      database.js         — SQLite layer (node:sqlite)
-      emailService.js     — provider abstraction (SimpleLogin / Cloudflare / local)
-      cooldowns.js        — in-memory per-user cooldown tracker
-      logger.js           — timestamped console logger with alias audit trail
-  data/aliases.db         — SQLite database (gitignored, created at runtime)
-  .env.example            — all required environment variable names with docs
-  SETUP.md                — full setup guide (domain DNS, Discord app, providers)
+      database.js             — SQLite CRUD layer
+      domains.js              — parses DOMAIN_COMMANDS env var
+      aliasGenerator.js       — shared alias creation logic (cooldowns, cap, dedup)
+      cooldowns.js            — in-memory per-user rate limiter
+      logger.js               — timestamped logger with alias audit trail
+    server.js                 — Express webhook server for email-to-DM delivery
+  data/aliases.db             — SQLite database (auto-created, gitignored)
+  .env.example                — all env var documentation
+  SETUP.md                    — full setup guide
 ```
 
 ## Architecture decisions
 
-- `node:sqlite` (Node.js 24 built-in) replaces `better-sqlite3` to avoid native compilation in the Replit environment
-- Soft deletes in the DB (`status = 'deleted'`) preserve an audit trail of all aliases ever created
-- Aliases are stored and enforced at the DB level — provider API is called only on create/delete
-- Cooldowns are in-memory (Map) so they reset on restart; use the DB if persistence across restarts is needed
-- All command replies are ephemeral — alias emails never appear in public channels
-
-## Product
-
-Users can:
-1. `/createemail` — generate a random alias like `swiftfox4721@yourdomain.com` (30s cooldown, max 5 aliases per user)
-2. `/myemails` — see all their active aliases in a private (ephemeral) reply
-3. `/deleteemail alias:<email>` — remove an alias; deletes it from both the provider and the database
-4. `/emailinfo alias:<email>` — view creation date, status, and provider info for any alias they own
-
-## User preferences
-
-- Use `node:sqlite` for SQLite — no native builds required in Replit
+- Domain-specific commands (`/lgen`, `/ngen`, etc.) are created dynamically in memory from the `DOMAIN_COMMANDS` env var — no separate files needed per domain
+- `node:sqlite` (Node.js 24 built-in) avoids native compilation issues on Replit
+- Soft deletes preserve alias history; ownership checks prevent cross-user access
+- Webhook server is opt-in (`ENABLE_WEBHOOK_SERVER=true`) — most users start with `/gen` first
 
 ## Gotchas
 
-- **Always run `deploy-commands` after adding or changing command definitions** — stale command schemas cause Discord to show old options
-- Set `DISCORD_GUILD_ID` in Secrets during development for instant command registration (global registration takes up to 1 hour)
-- The `data/` directory is created automatically at startup — no need to create it manually
-- SimpleLogin requires the custom domain to be verified in your account before creating aliases
-
-## Pointers
-
-- Full setup guide (DNS, Discord app creation, provider configuration): `artifacts/discord-bot/SETUP.md`
-- Environment variable reference: `artifacts/discord-bot/.env.example`
+- **Re-run `deploy-commands` every time you change `DOMAIN_COMMANDS`** — otherwise Discord won't show the new commands
+- Set `DISCORD_GUILD_ID` during dev for instant command updates; remove it for global deployment
+- The `data/` directory is created automatically — no manual setup needed
+- Users need DMs enabled in their Discord settings to receive email deliveries
