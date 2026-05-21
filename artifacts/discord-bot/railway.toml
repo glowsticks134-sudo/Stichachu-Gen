@@ -1,0 +1,22 @@
+# Railway configuration for the Memberk Emails Discord bot.
+# Docs: https://docs.railway.app/reference/config-as-code
+#
+# Deploy steps (do these once in Railway dashboard):
+#   1. Create a new project → "Deploy from GitHub repo"
+#   2. In the service settings → "Root Directory" → set to:  artifacts/discord-bot
+#   3. Add all variables from .env.example in the "Variables" tab
+#   4. For persistent SQLite, add a Volume mounted at /data
+#      then set DATABASE_PATH=/data/aliases.db
+#   5. Deploy — the bot will start automatically
+#   6. To register slash commands, set AUTO_DEPLOY_COMMANDS=true for ONE deploy,
+#      then set it back to false (commands persist in Discord until you change them)
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+# The bot has no HTTP port to expose — it runs as a pure background service
+startCommand = "node --no-warnings=ExperimentalWarning src/index.js"
+# Always restart the bot if it crashes
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

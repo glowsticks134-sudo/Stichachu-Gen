@@ -1,6 +1,10 @@
 /**
  * SQLite database layer using Node.js 24's built-in node:sqlite module.
  * No native compilation needed — bundled with Node.js 22.5+.
+ *
+ * DATABASE_PATH env var controls where the .db file lives.
+ * On Railway: mount a Volume at /data and set DATABASE_PATH=/data/aliases.db
+ * so data survives redeploys. Without a volume the file sits in data/ locally.
  */
 
 import { DatabaseSync } from 'node:sqlite';
@@ -11,14 +15,25 @@ import { mkdirSync } from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const DATA_DIR = join(__dirname, '../../data');
-const DB_PATH = join(DATA_DIR, 'aliases.db');
+// Resolve the database file path.
+// Priority: DATABASE_PATH env var → default local data/ folder
+function resolveDbPath() {
+  if (process.env.DATABASE_PATH && process.env.DATABASE_PATH.trim()) {
+    return process.env.DATABASE_PATH.trim();
+  }
+  return join(__dirname, '../../data/aliases.db');
+}
 
 let db;
 
 export function initDatabase() {
-  mkdirSync(DATA_DIR, { recursive: true });
-  db = new DatabaseSync(DB_PATH);
+  const dbPath = resolveDbPath();
+
+  // Ensure the parent directory exists (important for Railway volume paths)
+  const dir = dbPath.substring(0, dbPath.lastIndexOf('/'));
+  if (dir) mkdirSync(dir, { recursive: true });
+
+  db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL;');
 
   db.exec(`
@@ -33,11 +48,13 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_aliases_user ON aliases (discord_user_id);
   `);
 
-  // Migration: add domain column if missing
+  // Migration: add domain column if missing (for databases created before this column existed)
   const cols = db.prepare('PRAGMA table_info(aliases)').all().map((c) => c.name);
   if (!cols.includes('domain')) {
     db.exec('ALTER TABLE aliases ADD COLUMN domain TEXT;');
   }
+
+  return dbPath; // Return so index.js can log the active path
 }
 
 function getDb() {
@@ -86,40 +103,20 @@ export function aliasExists(aliasEmail) {
   return !!getDb().prepare('SELECT 1 FROM aliases WHERE alias_email = ?').get(aliasEmail);
 }
 
-/**
- * Aggregate statistics used by the /stats command.
- */
 export function getStats() {
   const d = getDb();
-
-  const totalActive = d
-    .prepare(`SELECT COUNT(*) AS n FROM aliases WHERE status = 'active'`)
-    .get().n;
-
+  const totalActive = d.prepare(`SELECT COUNT(*) AS n FROM aliases WHERE status = 'active'`).get().n;
   const totalAllTime = d.prepare(`SELECT COUNT(*) AS n FROM aliases`).get().n;
-
-  const uniqueUsers = d
-    .prepare(`SELECT COUNT(DISTINCT discord_user_id) AS n FROM aliases WHERE status = 'active'`)
-    .get().n;
-
-  const last24h = d
-    .prepare(
-      `SELECT COUNT(*) AS n FROM aliases
-       WHERE status = 'active'
-         AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ', datetime('now', '-1 day'))`,
-    )
-    .get().n;
-
-  // Top 5 domains by active alias count
-  const byDomain = d
-    .prepare(
-      `SELECT domain, COUNT(*) AS n FROM aliases
-       WHERE status = 'active' AND domain IS NOT NULL
-       GROUP BY domain
-       ORDER BY n DESC
-       LIMIT 5`,
-    )
-    .all();
-
+  const uniqueUsers = d.prepare(`SELECT COUNT(DISTINCT discord_user_id) AS n FROM aliases WHERE status = 'active'`).get().n;
+  const last24h = d.prepare(
+    `SELECT COUNT(*) AS n FROM aliases
+     WHERE status = 'active'
+       AND created_at > strftime('%Y-%m-%dT%H:%M:%SZ', datetime('now', '-1 day'))`,
+  ).get().n;
+  const byDomain = d.prepare(
+    `SELECT domain, COUNT(*) AS n FROM aliases
+     WHERE status = 'active' AND domain IS NOT NULL
+     GROUP BY domain ORDER BY n DESC LIMIT 5`,
+  ).all();
   return { totalActive, totalAllTime, uniqueUsers, last24h, byDomain };
 }

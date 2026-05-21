@@ -1,13 +1,13 @@
 {
   "name": "@workspace/discord-bot",
   "version": "1.0.0",
-  "description": "Discord bot for generating and managing email aliases",
+  "description": "Memberk Emails — Discord bot for generating and managing email aliases",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node --no-warnings=ExperimentalWarning src/index.js",
     "dev": "node --no-warnings=ExperimentalWarning --watch src/index.js",
-    "deploy-commands": "node src/deploy-commands.js"
+    "deploy-commands": "node --no-warnings=ExperimentalWarning src/deploy-commands.js"
   },
   "dependencies": {
     "axios": "^1.7.2",
@@ -17,6 +17,7 @@
     "multer": "^2.1.1"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
   }
 }

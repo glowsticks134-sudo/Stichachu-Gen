@@ -1,25 +1,19 @@
 /**
  * Webhook HTTP server for receiving inbound emails and delivering them via Discord DM.
  *
- * When someone sends an email to one of the bot's aliases, your mail provider
- * (Mailgun, Cloudflare Email Workers, or any custom service) should POST to:
+ * PORT priority (Railway-compatible):
+ *   1. PORT env var  — Railway injects this automatically for web services
+ *   2. WEBHOOK_PORT  — explicit override for local dev
+ *   3. 3001          — fallback default
  *
- *   POST /webhook/mailgun  — Mailgun inbound routing format
- *   POST /webhook/email    — Generic JSON format (from any provider)
+ * Endpoints (all POST):
+ *   /webhook/mailgun    — Mailgun inbound routing (multipart/form-data)
+ *   /webhook/cloudflare — Cloudflare Email Workers (JSON)
+ *   /webhook/email      — Generic JSON: { to, from, subject, text }
  *
- * Generic JSON format:
- *   {
- *     "to":      "alias@domain.com",
- *     "from":    "sender@example.com",
- *     "subject": "Hello!",
- *     "text":    "Email body here"
- *   }
- *
- * The server looks up the alias in SQLite, finds the owner's Discord ID,
- * and sends them a DM with the email content.
- *
- * Set WEBHOOK_PORT in .env (default: 3001).
- * Set WEBHOOK_SECRET in .env to require a secret header for security.
+ * Security:
+ *   Set WEBHOOK_SECRET and send it in the X-Webhook-Secret header from your
+ *   mail provider. Requests without the matching header are rejected with 401.
  */
 
 import express from 'express';
@@ -27,46 +21,42 @@ import multer from 'multer';
 import { getAliasByEmail } from './utils/database.js';
 import { logger } from './utils/logger.js';
 
-// multer handles multipart/form-data (Mailgun's inbound format)
 const upload = multer();
 
 /**
- * Start the webhook server and wire up the Discord client for DM delivery.
- *
- * @param {import('discord.js').Client} client — the logged-in Discord client
+ * Start the webhook server.
+ * @param {import('discord.js').Client} client
  * @returns {import('http').Server}
  */
 export function startWebhookServer(client) {
   const app = express();
-  const port = parseInt(process.env.WEBHOOK_PORT ?? '3001', 10);
-  const secret = process.env.WEBHOOK_SECRET ?? null;
 
-  // Parse JSON bodies (for the generic endpoint)
+  // PORT is injected by Railway automatically; fall back to WEBHOOK_PORT or 3001
+  const port = parseInt(process.env.PORT ?? process.env.WEBHOOK_PORT ?? '3001', 10);
+  const secret = process.env.WEBHOOK_SECRET?.trim() || null;
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // ── Security middleware ──────────────────────────────────────────────────
+  // ── Auth middleware ─────────────────────────────────────────────────────────
   app.use((req, res, next) => {
-    // Skip secret check for the health endpoint
     if (req.path === '/health') return next();
 
-    // If a secret is configured, require it in the X-Webhook-Secret header
     if (secret && req.headers['x-webhook-secret'] !== secret) {
-      logger.warn(`Rejected webhook request from ${req.ip} — invalid secret`);
+      logger.warn(`Rejected webhook from ${req.ip} — bad or missing secret`);
       return res.status(401).json({ error: 'Unauthorized' });
     }
     next();
   });
 
-  // ── Health check ─────────────────────────────────────────────────────────
-  app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+  // ── Health check (Railway uses this to verify the service is up) ────────────
+  app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
-  // ── Generic JSON email webhook ────────────────────────────────────────────
+  // ── Generic JSON endpoint ───────────────────────────────────────────────────
   app.post('/webhook/email', async (req, res) => {
     try {
       const { to, from, subject, text } = req.body ?? {};
       if (!to) return res.status(400).json({ error: 'Missing "to" field' });
-
       await deliverEmail(client, { to, from, subject, text });
       res.json({ ok: true });
     } catch (err) {
@@ -75,8 +65,7 @@ export function startWebhookServer(client) {
     }
   });
 
-  // ── Mailgun inbound webhook ───────────────────────────────────────────────
-  // Mailgun sends multipart/form-data with fields: recipient, sender, subject, body-plain
+  // ── Mailgun inbound (multipart/form-data) ───────────────────────────────────
   app.post('/webhook/mailgun', upload.none(), async (req, res) => {
     try {
       const to = req.body?.recipient ?? req.body?.To;
@@ -85,7 +74,6 @@ export function startWebhookServer(client) {
       const text = req.body?.['body-plain'] ?? req.body?.['stripped-text'] ?? '';
 
       if (!to) return res.status(400).json({ error: 'Missing recipient' });
-
       await deliverEmail(client, { to, from, subject, text });
       res.json({ ok: true });
     } catch (err) {
@@ -94,14 +82,11 @@ export function startWebhookServer(client) {
     }
   });
 
-  // ── Cloudflare Email Workers webhook ─────────────────────────────────────
-  // When using Cloudflare Email Workers, configure your worker to POST here
-  // with JSON: { to, from, subject, text }
+  // ── Cloudflare Email Workers (JSON) ─────────────────────────────────────────
   app.post('/webhook/cloudflare', async (req, res) => {
     try {
       const { to, from, subject, text } = req.body ?? {};
       if (!to) return res.status(400).json({ error: 'Missing "to" field' });
-
       await deliverEmail(client, { to, from, subject, text });
       res.json({ ok: true });
     } catch (err) {
@@ -112,41 +97,36 @@ export function startWebhookServer(client) {
 
   const server = app.listen(port, () => {
     logger.info(`Webhook server listening on port ${port}`);
+    logger.info(`Health check: http://localhost:${port}/health`);
   });
 
   return server;
 }
 
 /**
- * Look up the alias owner in the database and send them a Discord DM.
- *
- * @param {import('discord.js').Client} client
- * @param {{ to: string, from?: string, subject?: string, text?: string }} email
+ * Look up the alias owner and DM them the email content.
  */
 async function deliverEmail(client, { to, from, subject, text }) {
   const aliasEmail = to.toLowerCase().trim();
   const record = getAliasByEmail(aliasEmail);
 
   if (!record) {
-    logger.warn(`Received email for unknown alias: ${aliasEmail}`);
-    return; // Not our alias — silently ignore
+    logger.warn(`Email received for unknown alias: ${aliasEmail}`);
+    return;
   }
-
   if (record.status !== 'active') {
-    logger.warn(`Received email for inactive alias: ${aliasEmail}`);
+    logger.warn(`Email received for inactive alias: ${aliasEmail}`);
     return;
   }
 
-  // Fetch the Discord user and DM them
   let user;
   try {
     user = await client.users.fetch(record.discord_user_id);
   } catch (err) {
-    logger.error(`Could not fetch Discord user ${record.discord_user_id}: ${err.message}`);
+    logger.error(`Cannot fetch Discord user ${record.discord_user_id}: ${err.message}`);
     return;
   }
 
-  // Build a nicely formatted DM
   const dmLines = [
     `**📧 New email to** \`${aliasEmail}\``,
     '',
@@ -154,16 +134,13 @@ async function deliverEmail(client, { to, from, subject, text }) {
     `**Subject:** ${subject ?? '(no subject)'}`,
     '',
     '**Message:**',
-    (text ?? '(no body)').slice(0, 1800), // Discord DM limit is ~2000 chars
+    (text ?? '(no body)').slice(0, 1800),
   ];
 
   try {
     await user.send(dmLines.join('\n'));
     logger.alias('delivered', record.discord_user_id, aliasEmail);
   } catch (err) {
-    // User might have DMs disabled — log and move on
-    logger.warn(
-      `Could not DM user ${record.discord_user_id} (DMs may be disabled): ${err.message}`,
-    );
+    logger.warn(`Cannot DM user ${record.discord_user_id} (DMs may be off): ${err.message}`);
   }
 }

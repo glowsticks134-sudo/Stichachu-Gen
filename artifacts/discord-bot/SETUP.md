@@ -1,13 +1,14 @@
-# Discord Email Alias Bot — Setup Guide
+# Memberk Emails Bot — Setup Guide
 
-## Overview
+---
 
-This bot lets Discord users generate, manage, and delete disposable email aliases
-on your own custom domain. Aliases can be backed by:
+## Quick Start
 
-- **SimpleLogin** — a privacy-focused alias service with a free API tier
-- **Cloudflare Email Routing** — built into Cloudflare's free plan
-- **Local** — no external API; useful when you have a catch-all rule in place
+| Platform | Guide |
+|---|---|
+| Railway | [Jump to Railway setup](#railway-deployment) |
+| Replit | [Jump to Replit setup](#replit-setup) |
+| Local | [Jump to local setup](#local-development) |
 
 ---
 
@@ -15,178 +16,174 @@ on your own custom domain. Aliases can be backed by:
 
 | Requirement | Where to get it |
 |---|---|
-| Node.js 18+ | Already on Replit |
+| Node.js 22+ | Included on Railway & Replit |
 | A Discord application | https://discord.com/developers/applications |
-| A custom domain | Any registrar (Namecheap, Cloudflare, etc.) |
-| SimpleLogin account **or** Cloudflare account | See provider sections below |
+| At least one custom domain | Any registrar (Namecheap, Cloudflare, etc.) |
 
 ---
 
 ## Step 1 — Create a Discord Application
 
 1. Go to https://discord.com/developers/applications → **New Application**
-2. Name it (e.g. "Email Alias Bot") → **Create**
+2. Name it (e.g. "Memberk Emails") → **Create**
 3. Copy the **Application ID** → this is your `DISCORD_CLIENT_ID`
-4. Open **Bot** in the left sidebar → **Add Bot**
-5. Under the bot's username, click **Reset Token**, then copy it → `DISCORD_BOT_TOKEN`
-6. Enable **Message Content Intent** (not required now but good practice)
-7. Under **OAuth2 → URL Generator**, tick `bot` + `applications.commands`
-8. Under **Bot Permissions** tick: _Use Slash Commands_
-9. Copy the generated URL, open it in your browser, and invite the bot to your server
+4. Open **Bot** in the left sidebar:
+   - Click **Reset Token**, copy it → `DISCORD_BOT_TOKEN`
+   - Enable **Message Content Intent** (under Privileged Gateway Intents)
+5. Under **OAuth2 → URL Generator**:
+   - Scopes: `bot`, `applications.commands`
+   - Permissions: `Send Messages`, `Use Slash Commands`, `Send Messages in Threads`
+6. Copy the generated URL → open it → invite the bot to your server
 
 ---
 
-## Step 2 — Configure Your Domain
+## Step 2 — Set Up Your Domains
 
-### Option A — SimpleLogin (recommended for beginners)
+The bot needs catch-all email forwarding on your domains so that every address
+(`anything@yourdomain.com`) receives email. Choose a provider:
 
-SimpleLogin acts as the alias layer. Your domain is verified once; every alias
-is created via their API. Forwarding is handled entirely by SimpleLogin.
+### Cloudflare Email Routing (free, recommended)
 
-**How it works:**
-```
-Someone sends email → alias@yourdomain.com
-SimpleLogin receives it (because MX records point to them)
-SimpleLogin forwards it to your real inbox
-```
+1. Add your domain to Cloudflare (free plan)
+2. Dashboard → your domain → **Email → Email Routing → Enable**
+3. Add a **Destination address** (your real inbox) and verify it
+4. Set up a **Catch-all rule**: match all → forward to your destination
+5. Cloudflare updates the MX records automatically
 
-**Setup:**
-1. Create a free account at https://app.simplelogin.io
-2. Go to **Dashboard → Custom Domains → Add a domain**
-3. Add the MX and TXT DNS records shown — usually:
+That's it. Every alias the bot creates will land in your real inbox.
+
+### SimpleLogin (alternative — manages aliases per-address)
+
+1. Create an account at https://app.simplelogin.io
+2. Go to **Custom Domains → Add domain** and follow the MX record setup
+3. A catch-all is enabled by default for your domain
+
+---
+
+## Railway Deployment
+
+Railway is the recommended production host. The bot runs as a background service
+(no port binding needed unless you enable the webhook server).
+
+### 1. Push to GitHub
+
+Push your project to a GitHub repository first.
+
+### 2. Create a Railway Project
+
+1. Go to https://railway.app → **New Project → Deploy from GitHub Repo**
+2. Select your repository
+3. In the service settings → **Settings → Root Directory** → set to:
    ```
-   Type  Name   Value                          Priority
-   MX    @      mx1.simplelogin.co.            10
-   MX    @      mx2.simplelogin.co.            20
-   TXT   @      "v=spf1 include:simplelogin.co ~all"
-   TXT   dkim._domainkey   (value shown in SL dashboard)
+   artifacts/discord-bot
    ```
-4. Wait for DNS to propagate (usually < 15 minutes)
-5. Click **Verify** in the SimpleLogin dashboard
-6. Go to **API Key** and generate one → `SIMPLELOGIN_API_KEY`
 
-**Set in `.env`:**
+### 3. Add Environment Variables
+
+In Railway → your service → **Variables** tab, add:
+
+| Variable | Value | Required |
+|---|---|---|
+| `DISCORD_BOT_TOKEN` | Your bot token | ✅ |
+| `DISCORD_CLIENT_ID` | Your application ID | ✅ |
+| `DOMAIN_COMMANDS` | `lgen:larpers.cc,ngen:nachtmail.online,...` | ✅ |
+| `MAX_ALIASES_PER_USER` | `10` | Optional |
+| `AUTO_DEPLOY_COMMANDS` | `true` (first deploy only) | Optional |
+| `DISCORD_GUILD_ID` | Leave blank for global commands | Optional |
+| `DATABASE_PATH` | `/data/aliases.db` (if using a Volume) | Optional |
+| `LOG_CHANNEL_ID` | Your audit log channel ID | Optional |
+| `ENABLE_WEBHOOK_SERVER` | `false` | Optional |
+| `WEBHOOK_SECRET` | Random string for webhook auth | Optional |
+
+### 4. Add a Persistent Volume (recommended)
+
+Without a volume, the SQLite database resets on every redeploy.
+
+1. Railway → your service → **Volumes** tab → **New Volume**
+2. Mount path: `/data`
+3. Add the variable: `DATABASE_PATH=/data/aliases.db`
+
+### 5. Register Slash Commands (one-time)
+
+Set `AUTO_DEPLOY_COMMANDS=true` in Variables before your first deploy.
+The bot will register commands automatically at startup.
+
+After the commands appear in Discord, set `AUTO_DEPLOY_COMMANDS=false` and
+redeploy — this keeps startup fast. **Commands stay in Discord until you
+explicitly change them.**
+
+> **Re-register when:** you change `DOMAIN_COMMANDS` (add/remove domain commands)
+
+### 6. Deploy
+
+Click **Deploy**. Railway will build with nixpacks and start the bot.
+Check the **Logs** tab to confirm:
+
 ```
-EMAIL_PROVIDER=simplelogin
-SIMPLELOGIN_API_KEY=sl-your-key-here
-EMAIL_DOMAIN=yourdomain.com
+[INFO]  SQLite database: /data/aliases.db
+[INFO]  Loaded command: /delete
+[INFO]  Loaded command: /gen
+...
+[INFO]  Loaded domain command: /lgen → @larpers.cc
+[INFO]  Logged in as Memberk Emails#1234
 ```
+
+### Enabling Email-to-DM Delivery on Railway
+
+To receive inbound emails and deliver them to users via Discord DM:
+
+1. Set `ENABLE_WEBHOOK_SERVER=true`
+2. Set `WEBHOOK_SECRET=your-random-secret`
+3. In Railway → **Settings** → note the public URL (e.g. `your-app.railway.app`)
+4. Configure your mail provider to POST emails to:
+   - Mailgun: `https://your-app.railway.app/webhook/mailgun`
+   - Cloudflare Worker: `https://your-app.railway.app/webhook/cloudflare`
+   - Generic: `https://your-app.railway.app/webhook/email`
+5. Set the same `WEBHOOK_SECRET` value in your mail provider's webhook config
 
 ---
 
-### Option B — Cloudflare Email Routing
+## Replit Setup
 
-Cloudflare intercepts incoming email for your domain and routes it based on
-rules you define. This bot creates one routing rule per alias via the API.
-
-**How email routing works:**
-```
-Someone sends email → alias@yourdomain.com
-Cloudflare receives it (MX records point to Cloudflare's servers)
-Cloudflare looks up matching routing rule for that address
-Cloudflare forwards it to CLOUDFLARE_DESTINATION_EMAIL
-```
-
-**Setup:**
-1. Add your domain to Cloudflare (free plan is fine)
-2. In the Cloudflare dashboard → your domain → **Email → Email Routing**
-3. Click **Enable Email Routing** — Cloudflare will prompt you to update your
-   MX records automatically if your nameservers are already Cloudflare
-4. Add a **Destination Address** (your real inbox) and verify it
-5. Create an API Token at https://dash.cloudflare.com/profile/api-tokens:
-   - Template: **Custom token**
-   - Permission: `Zone` → `Email Routing Rules` → `Edit`
-   - Zone resource: your domain
-6. Copy your **Zone ID** from the domain overview page (right sidebar)
-
-**Set in `.env`:**
-```
-EMAIL_PROVIDER=cloudflare
-EMAIL_DOMAIN=yourdomain.com
-CLOUDFLARE_API_TOKEN=your-token-here
-CLOUDFLARE_ZONE_ID=your-zone-id-here
-CLOUDFLARE_DESTINATION_EMAIL=you@gmail.com
-```
+1. Open the **Secrets** panel (lock icon) and add the same variables from the table above
+2. Open the Shell and run:
+   ```bash
+   pnpm --filter @workspace/discord-bot run deploy-commands
+   ```
+3. The **Discord Bot** workflow keeps the bot running
 
 ---
 
-### Option C — Local (no external API)
+## Local Development
 
-Use this if you already have a **catch-all** forwarding rule set up on your
-domain (e.g. a Cloudflare catch-all, or your hosting provider's wildcard route).
-The bot generates alias addresses and tracks them in SQLite only — no API calls.
-
-**Set in `.env`:**
-```
-EMAIL_PROVIDER=local
-EMAIL_DOMAIN=yourdomain.com
-```
-
-> Emails to any `*@yourdomain.com` will land in your catch-all inbox.
-> The bot tracks who owns each alias but doesn't create per-alias routing rules.
-
----
-
-## Step 3 — Configure Environment Variables on Replit
-
-1. In Replit, open the **Secrets** panel (lock icon in the left sidebar)
-2. Add each key from `.env.example` with your real values
-   - Never paste secrets directly into code files
+1. Copy `.env.example` to `.env` and fill in your values
+2. Install dependencies:
+   ```bash
+   cd artifacts/discord-bot
+   pnpm install
+   ```
+3. Register commands (once):
+   ```bash
+   node src/deploy-commands.js
+   ```
+4. Start the bot:
+   ```bash
+   node src/index.js
+   ```
 
 ---
 
-## Step 4 — Install Dependencies & Register Commands
-
-Open the Replit **Shell** and run:
-
-```bash
-# Install packages
-cd artifacts/discord-bot && pnpm install
-
-# Register slash commands
-# Set DISCORD_GUILD_ID in Secrets for instant registration (dev only)
-node src/deploy-commands.js
-```
-
-> **Global vs guild commands:**
-> - Guild commands appear instantly (good for testing)
-> - Global commands can take up to 1 hour to propagate across Discord
-> - Remove `DISCORD_GUILD_ID` from Secrets before going to production
-
----
-
-## Step 5 — Start the Bot
-
-The bot runs as a persistent workflow. To start or restart it:
-
-```bash
-# From the discord-bot directory
-node src/index.js
-```
-
-On Replit the workflow keeps the bot alive automatically. You can also use the
-**Run** button if a workflow has been configured.
-
----
-
-## Available Commands
+## Commands Reference
 
 | Command | Description |
 |---|---|
-| `/createemail` | Generate a new unique alias (30s cooldown, max 5 per user) |
-| `/myemails` | List all your active aliases (ephemeral — only you see it) |
-| `/deleteemail alias:<email>` | Delete one of your aliases permanently |
-| `/emailinfo alias:<email>` | Show creation date and status of an alias |
-
----
-
-## Security Notes
-
-- All replies are **ephemeral** — only the command author sees them
-- Each alias is **owner-locked** — you cannot view or delete another user's alias
-- Rate limits: 30 s cooldown on create, 10 s on all other commands
-- Hard cap of `MAX_ALIASES_PER_USER` (default 5) per Discord user
-- Aliases are soft-deleted in the database to preserve audit history
+| `/gen` | Generate address on a random domain |
+| `/lgen`, `/ngen`, ... | Generate on a specific domain |
+| `/listmails` | List your addresses with quota bar |
+| `/delete` | Remove an address (with autocomplete) |
+| `/stats` | Bot statistics |
+| `/ping` | Bot latency |
+| `/usage` | Show all commands |
 
 ---
 
@@ -194,8 +191,9 @@ On Replit the workflow keeps the bot alive automatically. You can also use the
 
 | Problem | Fix |
 |---|---|
-| Commands not showing up | Run `node src/deploy-commands.js` again; set `DISCORD_GUILD_ID` for instant update |
-| `DISCORD_BOT_TOKEN missing` | Add it to Replit Secrets |
-| SimpleLogin "domain not found" | Verify the domain in your SimpleLogin dashboard and wait for DNS |
-| Cloudflare "API error" | Check your token has `Email Routing Rules: Edit` permission |
-| `better-sqlite3` build error | Run `pnpm install` again; the package compiles a native addon |
+| Commands not showing in Discord | Set `AUTO_DEPLOY_COMMANDS=true`, redeploy, then set back to `false` |
+| Database resets on redeploy | Add a Railway Volume mounted at `/data` and set `DATABASE_PATH=/data/aliases.db` |
+| Bot not starting on Railway | Check Logs tab — usually a missing env var |
+| "Missing DISCORD_BOT_TOKEN" | Add it to Railway Variables or Replit Secrets |
+| Webhook emails not arriving | Check `WEBHOOK_SECRET` matches your mail provider's config |
+| Users not getting DMs | User must have DMs enabled from server members |

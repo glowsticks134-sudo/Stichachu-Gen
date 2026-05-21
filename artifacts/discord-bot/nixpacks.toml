@@ -1,0 +1,11 @@
+# Nixpacks build configuration (used by Railway)
+# Specifies Node.js 24 and pnpm for the build environment.
+
+[phases.setup]
+nixPkgs = ["nodejs_24"]
+
+[phases.install]
+cmds = ["npm install -g pnpm && pnpm install --frozen-lockfile"]
+
+[start]
+cmd = "node --no-warnings=ExperimentalWarning src/index.js"
