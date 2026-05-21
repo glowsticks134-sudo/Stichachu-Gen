@@ -40,6 +40,11 @@ export async function execute(interaction) {
         inline: false,
       },
       {
+        name: 'Generators',
+        value: '`/genusername` \u2014 generate pronounceable 4-letter username ideas',
+        inline: false,
+      },
+      {
         name: 'Admin',
         value:
           '`/setchannels add` \u2014 restrict generation to a channel\n' +
