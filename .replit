@@ -65,3 +65,12 @@ externalPort = 8080
 [[ports]]
 localPort = 8081
 externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+LAVALINK_HOST = "lavalink.jirayu.net"
+LAVALINK_PORT = "443"
+LAVALINK_PASSWORD = "youshallnotpass"
+LAVALINK_SECURE = "true"
+LAVALINK_ID = "main-node"
