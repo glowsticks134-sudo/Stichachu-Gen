@@ -4,9 +4,21 @@ import { config } from '#config/config';
 import { logger } from '#utils/logger';
 import './healthcheck.js';
 
-// FIX: totalShards and shardsPerCluster now read from config (which reads from env vars)
-// Set TOTAL_SHARDS=auto or TOTAL_SHARDS=4 in your .env file.
-// Set SHARDS_PER_CLUSTER=2 (default) to control cluster density.
+// ── Startup validation ────────────────────────────────────────────────────────
+if (!config.token) {
+  logger.error('ClusterManager', '❌ TOKEN environment variable is not set. Cannot start.');
+  process.exit(1);
+}
+
+if (!config.clientId) {
+  logger.warn('ClusterManager', '⚠️  CLIENT_ID is not set — slash command registration will be skipped.');
+}
+
+logger.info('ClusterManager', `✅ TOKEN present (${config.token.slice(0, 8)}...), CLIENT_ID: ${config.clientId ? 'set' : 'NOT SET'}`);
+logger.info('ClusterManager', `Sharding mode: ${config.sharding.totalShards}, clusters per shard: ${config.sharding.shardsPerCluster}`);
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const manager = new ClusterManager('./src/index.js', {
   totalShards: config.sharding.totalShards,
   shardsPerCluster: config.sharding.shardsPerCluster,
@@ -26,7 +38,7 @@ manager.extend(
 manager.on('clusterCreate', cluster => {
   logger.info('ClusterManager', ` ==> Launched Cluster ${cluster.id} [${cluster.shardList.join(', ')}]`);
   cluster.on('clientReady', () =>
-    logger.success('ClusterManager', `Cluster ${cluster.id} ==> Ready`),
+    logger.success('ClusterManager', `Cluster ${cluster.id} ==> Ready ✅`),
   );
   cluster.on('reconnecting', () =>
     logger.warn('ClusterManager', `Cluster ${cluster.id} ==> Reconnecting...`),
@@ -58,6 +70,7 @@ manager
   .then(() =>
     logger.success('ClusterManager', ' ==> All clusters are loaded and bot is ready! 🚀'),
   )
-  .catch(error =>
-    logger.error('ClusterManager', ' ==> Error during spawn:', error),
-  );
+  .catch(error => {
+    logger.error('ClusterManager', ' ==> Fatal error during spawn — exiting so the process restarts:', error);
+    process.exit(1);
+  });
