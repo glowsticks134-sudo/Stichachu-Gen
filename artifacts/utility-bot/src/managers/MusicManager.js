@@ -140,7 +140,7 @@ export class MusicManager {
         playerVolume = 100;
       }
 
-      if (isNaN(playerVolume) || playerVolume < 1 || playerVolume > 100) {
+      if (isNaN(playerVolume) || playerVolume < 1 || playerVolume > 10000) {
         logger.warn("MusicManager", `Invalid volume ${playerVolume}, using 100`);
         playerVolume = 100;
       }
