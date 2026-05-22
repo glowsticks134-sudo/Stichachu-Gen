@@ -5,4 +5,4 @@ nixPkgs = ["nodejs_22"]
 cmds = ["npm install --ignore-scripts"]
 
 [start]
-cmd = "node --no-warnings=ExperimentalWarning src/index.js"
+cmd = "node src/shard.js"
