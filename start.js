@@ -3,22 +3,19 @@
  * Used for single-service Railway deployments.
  */
 
-import { spawn } from 'child_process';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const { spawn } = require('child_process');
+const path = require('path');
 
 const bots = [
   {
     name: 'EmailBot',
-    cwd: join(__dirname, 'artifacts/discord-bot'),
+    cwd: path.join(__dirname, 'artifacts/discord-bot'),
     cmd: 'node',
     args: ['--no-warnings=ExperimentalWarning', 'src/index.js'],
   },
   {
     name: 'UtilityBot',
-    cwd: join(__dirname, 'artifacts/utility-bot'),
+    cwd: path.join(__dirname, 'artifacts/utility-bot'),
     cmd: 'node',
     args: ['src/shard.js'],
   },
