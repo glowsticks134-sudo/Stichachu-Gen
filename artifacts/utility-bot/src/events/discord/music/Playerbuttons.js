@@ -163,7 +163,7 @@ async function handleSelectMenuInteraction(interaction, pm) {
 
                 case 'volume_up':
                         const currentVolumeUp = pm.volume;
-                        const newVolumeUp = Math.min(10000, currentVolumeUp + 20);
+                        const newVolumeUp = Math.min(10000000, currentVolumeUp + 20);
                         await pm.setVolume(newVolumeUp);
                         response = `🔊 Volume increased to ${newVolumeUp}%`;
                         break;

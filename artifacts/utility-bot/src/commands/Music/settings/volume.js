@@ -39,11 +39,11 @@ class SetDefaultVolumeCommand extends Command {
         description: "Set the default volume for new music players in this server",
         options: [{
           name: "volume",
-          description: "Volume level (1-10000). Leave empty to view current setting.",
+          description: "Volume level (1-10000000). Leave empty to view current setting.",
           type: 4,
           required: false,
           min_value: 1,
-          max_value: 10000,
+          max_value: 10000000,
         }],
       },
     });
@@ -68,8 +68,8 @@ class SetDefaultVolumeCommand extends Command {
     }
 
     if (volume !== null) {
-      if (isNaN(volume) || volume < 1 || volume > 10000) {
-        return this._sendError(ctx, "Invalid Volume", "Volume must be a number between 1 and 10000.");
+      if (isNaN(volume) || volume < 1 || volume > 10000000) {
+        return this._sendError(ctx, "Invalid Volume", "Volume must be a number between 1 and 10000000.");
       }
       await this._setDefaultVolume(ctx, volume);
     } else {

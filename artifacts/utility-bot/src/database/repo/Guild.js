@@ -115,8 +115,8 @@ export class Guild extends Database {
   setDefaultVolume(guildId, volume) {
     this.ensureGuild(guildId);
 
-    if (volume < 1 || volume > 10000) {
-      throw new Error("Volume must be between 1 and 10000");
+    if (volume < 1 || volume > 10000000) {
+      throw new Error("Volume must be between 1 and 10000000");
     }
 
     return this.exec(
