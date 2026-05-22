@@ -7,6 +7,7 @@
 
 import { SlashCommandBuilder, EmbedBuilder, Colors } from 'discord.js';
 import { getAliasesByUser, deleteAlias, getAliasByEmail } from '../utils/database.js';
+import { deleteEmailAlias } from '../utils/emailService.js';
 import { logger } from '../utils/logger.js';
 import { sendLogMessage } from '../utils/logChannel.js';
 
@@ -76,6 +77,16 @@ export async function execute(interaction) {
   }
 
   deleteAlias(targetAlias, userId);
+
+  // Also remove from the email provider (SimpleLogin / Cloudflare) so emails
+  // sent to this address actually stop being delivered.
+  try {
+    await deleteEmailAlias(record.provider_id, targetAlias);
+  } catch (err) {
+    logger.warn(`Provider deletion failed for ${targetAlias}: ${err.message}`);
+    // Non-fatal — alias is already soft-deleted in the database.
+  }
+
   logger.alias('deleted', userId, targetAlias);
 
   await sendLogMessage({

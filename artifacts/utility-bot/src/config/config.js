@@ -64,6 +64,7 @@ export const config = {
     ticket: './database/data/ticket.db',
     invites: './database/data/invites.db',
     settings: './database/data/settings.db',
+    levels: './database/data/levels.db',
   },
 
   // External links

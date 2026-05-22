@@ -6,6 +6,7 @@ import { Moderation } from "#db/Moderation";
 import { Ticket } from "#db/Ticket";
 import { Invites } from "#db/Invites";
 import { Settings } from "#db/Settings";
+import { Levels } from "#db/Levels";
 import { logger } from "#utils/logger";
 
 export class DatabaseManager {
@@ -23,6 +24,7 @@ export class DatabaseManager {
       this.ticket = new Ticket();
       this.invites = new Invites();
       this.settings = new Settings();
+      this.levels = new Levels();
       logger.success("DatabaseManager", "All databases initialized successfully");
     } catch (error) {
       logger.error("DatabaseManager", "Failed to initialize databases", error);
@@ -40,6 +42,7 @@ export class DatabaseManager {
       this.ticket.close();
       this.invites.close();
       this.settings.close();
+      this.levels.close();
       logger.info("DatabaseManager", "All database connections closed");
     } catch (error) {
       logger.error("DatabaseManager", "Failed to close database connections", error);
@@ -193,6 +196,15 @@ export class DatabaseManager {
   setLog(guildId, logType, channelId) { return this.settings.setLog(guildId, logType, channelId); }
   getLog(guildId, logType) { return this.settings.getLog(guildId, logType); }
   getAllLogs(guildId) { return this.settings.getAllLogs(guildId); }
+
+  // ─── Levels / XP ─────────────────────────────────────────────────────────────
+  getLevelUser(userId, guildId) { return this.levels.getUser(userId, guildId); }
+  addXp(userId, guildId, amount) { return this.levels.addXp(userId, guildId, amount); }
+  setUserLevel(userId, guildId, level) { return this.levels.setLevel(userId, guildId, level); }
+  getUserRank(userId, guildId) { return this.levels.getRank(userId, guildId); }
+  getLeaderboard(guildId, limit = 10, offset = 0) { return this.levels.getLeaderboard(guildId, limit, offset); }
+  getLevelTotalUsers(guildId) { return this.levels.getTotalUsers(guildId); }
+  canEarnXp(userId, guildId, cooldownMs) { return this.levels.canEarnXp(userId, guildId, cooldownMs); }
 }
 
 export const db = new DatabaseManager();
