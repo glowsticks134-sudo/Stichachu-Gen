@@ -5,8 +5,8 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node --experimental-sqlite src/shard.js",
-    "dev": "node --experimental-sqlite --watch src/shard.js",
+    "start": "node src/shard.js",
+    "dev": "node --watch src/shard.js",
     "test": "node --test",
     "setup": "cp .env.example .env && echo 'Created .env file. Please edit it with your configuration.'"
   },

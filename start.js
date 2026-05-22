@@ -4,13 +4,11 @@
  *
  * Uses pnpm --filter to run each bot so pnpm workspace module resolution works
  * correctly (same as running `pnpm --filter @workspace/discord-bot run start`).
+ *
+ * Requires Node.js 24+ (node:sqlite is stable, no flags needed).
  */
 
 const { spawn } = require('child_process');
-
-// Ensure node:sqlite is available on Node 22 (became stable in v23.4+).
-// NODE_OPTIONS is inherited by all spawned processes including shard workers.
-process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS ? process.env.NODE_OPTIONS + ' ' : '') + '--experimental-sqlite';
 
 const bots = [
   {
