@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "bash"]
+modules = ["web", "bash", "nodejs-22"]
 
 [deployment]
 router = "application"
@@ -53,3 +53,8 @@ externalPort = 80
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+DOMAIN_COMMANDS = "lgen:larpers.cc,ngen:nachtmail.online,dgen:dxdmail.cc,vgen:vinmail.org,1gen:nachthub.com,zgen:zacmail.site,mgen:madmail.online,cgen:cuckmail.online,sgen:sonmail.online"
