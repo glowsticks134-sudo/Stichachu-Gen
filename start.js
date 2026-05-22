@@ -1,23 +1,23 @@
 /**
  * Combined launcher — starts both the email bot and utility bot in one process.
  * Used for single-service Railway deployments.
+ *
+ * Uses pnpm --filter to run each bot so pnpm workspace module resolution works
+ * correctly (same as running `pnpm --filter @workspace/discord-bot run start`).
  */
 
 const { spawn } = require('child_process');
-const path = require('path');
 
 const bots = [
   {
     name: 'EmailBot',
-    cwd: path.join(__dirname, 'artifacts/discord-bot'),
-    cmd: 'node',
-    args: ['--no-warnings=ExperimentalWarning', 'src/index.js'],
+    cmd: 'pnpm',
+    args: ['--filter', '@workspace/discord-bot', 'run', 'start'],
   },
   {
     name: 'UtilityBot',
-    cwd: path.join(__dirname, 'artifacts/utility-bot'),
-    cmd: 'node',
-    args: ['src/shard.js'],
+    cmd: 'pnpm',
+    args: ['--filter', '@workspace/utility-bot', 'run', 'start'],
   },
 ];
 
@@ -25,7 +25,6 @@ function startBot(bot) {
   console.log(`[Launcher] Starting ${bot.name}...`);
 
   const proc = spawn(bot.cmd, bot.args, {
-    cwd: bot.cwd,
     stdio: 'inherit',
     env: process.env,
   });
