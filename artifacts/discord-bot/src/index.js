@@ -107,9 +107,11 @@ for (const file of commandFiles) {
 const domainCmds = getDomainCommands();
 
 // ─── Auto-register slash commands for all bots ────────────────────────────────
+// Runs on every startup unless AUTO_DEPLOY_COMMANDS=false is explicitly set.
+// This ensures commands (including domain prefix commands) are always up to date.
 
-if (process.env.AUTO_DEPLOY_COMMANDS === 'true') {
-  logger.info('AUTO_DEPLOY_COMMANDS=true — registering slash commands for all bots...');
+if (process.env.AUTO_DEPLOY_COMMANDS !== 'false') {
+  logger.info(`Registering slash commands for ${botConfigs.length} bot(s)...`);
   for (const config of botConfigs) {
     try {
       await registerCommandsForBot(config);
@@ -117,6 +119,8 @@ if (process.env.AUTO_DEPLOY_COMMANDS === 'true') {
       logger.error(`Bot ${config.index}: command registration failed — ${err.message}`);
     }
   }
+} else {
+  logger.info('Command registration skipped (AUTO_DEPLOY_COMMANDS=false).');
 }
 
 // ─── Start each bot instance ──────────────────────────────────────────────────
