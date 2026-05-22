@@ -49,25 +49,15 @@ function collectBotConfigs() {
   const configs = [];
 
   for (let i = 1; i <= 20; i++) {
-    const token = process.env[`DISCORD_BOT_TOKEN_${i}`]?.trim();
-    const clientId = process.env[`DISCORD_CLIENT_ID_${i}`]?.trim();
+    const token = process.env[`TOKEN_${i}`]?.trim();
+    const clientId = process.env[`CLIENT_${i}`]?.trim();
     if (!token && !clientId) break;
-    if (!token || !clientId) { console.warn(`Bot ${i}: skipping — TOKEN or CLIENT_ID missing`); continue; }
+    if (!token || !clientId) { console.warn(`Bot ${i}: skipping — TOKEN_${i} or CLIENT_${i} missing`); continue; }
     configs.push({
       index: i,
       token,
       clientId,
-      guildId: process.env[`DISCORD_GUILD_ID_${i}`]?.trim() || process.env.DISCORD_GUILD_ID?.trim() || null,
-    });
-  }
-
-  // Fallback to legacy single-bot variables
-  if (configs.length === 0 && process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CLIENT_ID) {
-    configs.push({
-      index: 1,
-      token: process.env.DISCORD_BOT_TOKEN.trim(),
-      clientId: process.env.DISCORD_CLIENT_ID.trim(),
-      guildId: process.env.DISCORD_GUILD_ID?.trim() || null,
+      guildId: process.env[`GUILD_${i}`]?.trim() || null,
     });
   }
 

@@ -15,7 +15,7 @@ if (!lavalinkHost || !lavalinkPassword) {
 
 export const config = {
   // Bot authentication token from Discord Developer Portal
-  token: process.env.DISCORD_TOKEN,
+  token: process.env.TOKEN,
 
   // Discord application client ID (found in Developer Portal)
   clientId: process.env.CLIENT_ID,

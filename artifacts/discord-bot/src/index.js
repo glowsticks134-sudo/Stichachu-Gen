@@ -49,14 +49,14 @@ const __dirname = dirname(__filename);
 function collectBotConfigs() {
   const configs = [];
 
-  // Numbered format: DISCORD_BOT_TOKEN_1, DISCORD_BOT_TOKEN_2, ...
+  // Short format: TOKEN_1, TOKEN_2, ...
   for (let i = 1; i <= 20; i++) {
-    const token = process.env[`DISCORD_BOT_TOKEN_${i}`]?.trim();
-    const clientId = process.env[`DISCORD_CLIENT_ID_${i}`]?.trim();
+    const token = process.env[`TOKEN_${i}`]?.trim();
+    const clientId = process.env[`CLIENT_${i}`]?.trim();
 
     if (!token && !clientId) break; // Stop at the first gap
     if (!token || !clientId) {
-      logger.warn(`Bot ${i}: TOKEN and CLIENT_ID must both be set — skipping`);
+      logger.warn(`Bot ${i}: TOKEN_${i} and CLIENT_${i} must both be set — skipping`);
       continue;
     }
 
@@ -64,26 +64,8 @@ function collectBotConfigs() {
       index: i,
       token,
       clientId,
-      // Per-bot guild ID falls back to the global DISCORD_GUILD_ID
-      guildId:
-        process.env[`DISCORD_GUILD_ID_${i}`]?.trim() ||
-        process.env.DISCORD_GUILD_ID?.trim() ||
-        null,
+      guildId: process.env[`GUILD_${i}`]?.trim() || null,
     });
-  }
-
-  // Backward-compatible single-bot fallback (original variable names)
-  if (configs.length === 0) {
-    const token = process.env.DISCORD_BOT_TOKEN?.trim();
-    const clientId = process.env.DISCORD_CLIENT_ID?.trim();
-    if (token && clientId) {
-      configs.push({
-        index: 1,
-        token,
-        clientId,
-        guildId: process.env.DISCORD_GUILD_ID?.trim() || null,
-      });
-    }
   }
 
   return configs;
@@ -93,8 +75,7 @@ const botConfigs = collectBotConfigs();
 
 if (botConfigs.length === 0) {
   logger.error('No valid bot configuration found.');
-  logger.error('Set DISCORD_BOT_TOKEN_1 + DISCORD_CLIENT_ID_1 (and optionally _2, _3, ...) in your variables.');
-  logger.error('Or use the legacy DISCORD_BOT_TOKEN + DISCORD_CLIENT_ID for a single bot.');
+  logger.error('Set TOKEN_1 + CLIENT_1 in your .env (and optionally TOKEN_2 + CLIENT_2, etc.).');
   process.exit(1);
 }
 
