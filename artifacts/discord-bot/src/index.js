@@ -7,17 +7,13 @@
  *   - Webhook server (first bot's client handles DM delivery)
  *
  * Environment variable format:
- *   DISCORD_BOT_TOKEN_1=...   DISCORD_CLIENT_ID_1=...   (bot 1)
- *   DISCORD_BOT_TOKEN_2=...   DISCORD_CLIENT_ID_2=...   (bot 2)
- *   DISCORD_BOT_TOKEN_3=...   DISCORD_CLIENT_ID_3=...   (bot 3, etc.)
- *
- * Backward compatible: if TOKEN_1/TOKEN_2 aren't set, falls back to the
- * original DISCORD_BOT_TOKEN / DISCORD_CLIENT_ID single-bot variables.
+ *   TOKEN_1=...   CLIENT_1=...   (bot 1)
+ *   TOKEN_2=...   CLIENT_2=...   (bot 2)
+ *   TOKEN_3=...   CLIENT_3=...   (bot 3, etc.)
  *
  * Optional per-bot variables:
- *   DISCORD_GUILD_ID_1=...    — guild-scoped command registration for bot 1
- *   DISCORD_GUILD_ID_2=...    — guild-scoped command registration for bot 2
- *   (falls back to DISCORD_GUILD_ID if the numbered version isn't set)
+ *   GUILD_1=...   — guild-scoped command registration for bot 1 (instant, dev only)
+ *   GUILD_2=...   — guild-scoped command registration for bot 2
  *
  * AUTO_DEPLOY_COMMANDS=true   — register slash commands for ALL bots at startup
  */
