@@ -6,5 +6,8 @@ cmds = [
   "pnpm install --no-frozen-lockfile",
 ]
 
+[phases.build]
+cmds = []
+
 [start]
 cmd = "node start.js"
