@@ -1,47 +1,32 @@
 /**
- * Combined launcher — starts both the email bot and utility bot in one process.
+ * Launcher — starts the email bot.
  * Used for single-service Railway deployments.
  *
- * Uses pnpm --filter to run each bot so pnpm workspace module resolution works
+ * Uses pnpm --filter to run the bot so pnpm workspace module resolution works
  * correctly (same as running `pnpm --filter @workspace/discord-bot run start`).
  *
- * Requires Node.js 24+ (node:sqlite is stable, no flags needed).
+ * Requires Node.js 22+.
  */
 
 const { spawn } = require('child_process');
 
-const bots = [
-  {
-    name: 'EmailBot',
-    cmd: 'pnpm',
-    args: ['--filter', '@workspace/discord-bot', 'run', 'start'],
-  },
-  {
-    name: 'UtilityBot',
-    cmd: 'pnpm',
-    args: ['--filter', '@workspace/utility-bot', 'run', 'start'],
-  },
-];
+function startBot() {
+  console.log('[Launcher] Starting EmailBot...');
 
-function startBot(bot) {
-  console.log(`[Launcher] Starting ${bot.name}...`);
-
-  const proc = spawn(bot.cmd, bot.args, {
+  const proc = spawn('pnpm', ['--filter', '@workspace/discord-bot', 'run', 'start'], {
     stdio: 'inherit',
     env: process.env,
   });
 
   proc.on('exit', (code, signal) => {
-    console.log(`[Launcher] ${bot.name} exited (code=${code}, signal=${signal}) — restarting in 5s`);
-    setTimeout(() => startBot(bot), 5000);
+    console.log(`[Launcher] EmailBot exited (code=${code}, signal=${signal}) — restarting in 5s`);
+    setTimeout(startBot, 5000);
   });
 
   proc.on('error', (err) => {
-    console.error(`[Launcher] ${bot.name} error: ${err.message} — restarting in 5s`);
-    setTimeout(() => startBot(bot), 5000);
+    console.error(`[Launcher] EmailBot error: ${err.message} — restarting in 5s`);
+    setTimeout(startBot, 5000);
   });
 }
 
-for (const bot of bots) {
-  startBot(bot);
-}
+startBot();

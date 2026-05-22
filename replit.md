@@ -7,16 +7,18 @@ A Discord bot that generates disposable email aliases on custom domains and deli
 - **Start bot**: `pnpm --filter @workspace/discord-bot run start`
 - **Register commands**: `pnpm --filter @workspace/discord-bot run deploy-commands`
   - Run once after setup, and again whenever you change `DOMAIN_COMMANDS`
-  - Set `DISCORD_GUILD_ID` in Secrets for instant registration during development
+  - Set `GUILD_1` in Secrets for instant registration during development
 
-## Required Secrets (add in Replit Secrets panel)
+## Required Secrets
 
 | Key | Description |
 |---|---|
-| `DISCORD_BOT_TOKEN` | From discord.com/developers → your app → Bot → Reset Token |
-| `DISCORD_CLIENT_ID` | From discord.com/developers → your app → General Information |
-| `DISCORD_GUILD_ID` | Your test server ID (for instant command registration) |
+| `TOKEN_1` | Bot token — discord.com/developers → your app → Bot → Reset Token |
+| `CLIENT_1` | Client ID — discord.com/developers → your app → General Information |
+| `GUILD_1` | (Optional) Your test server ID for instant command registration |
 | `DOMAIN_COMMANDS` | e.g. `lgen:larpers.cc,ngen:nachtmail.online` |
+
+Add `TOKEN_2` + `CLIENT_2` (and so on) to run multiple bots in parallel sharing the same database and commands.
 
 ## Commands
 
@@ -30,7 +32,7 @@ A Discord bot that generates disposable email aliases on custom domains and deli
 
 ## Stack
 
-- Node.js 24, ES Modules, discord.js v14
+- Node.js 22, ES Modules, discord.js v14
 - SQLite via `node:sqlite` (Node.js built-in — no native compilation)
 - Express + multer for email webhook delivery server
 - No external database required
@@ -65,13 +67,13 @@ artifacts/discord-bot/
 ## Architecture decisions
 
 - Domain-specific commands (`/lgen`, `/ngen`, etc.) are created dynamically in memory from the `DOMAIN_COMMANDS` env var — no separate files needed per domain
-- `node:sqlite` (Node.js 24 built-in) avoids native compilation issues on Replit
+- `node:sqlite` (Node.js 22 built-in) avoids native compilation issues on Replit
 - Soft deletes preserve alias history; ownership checks prevent cross-user access
 - Webhook server is opt-in (`ENABLE_WEBHOOK_SERVER=true`) — most users start with `/gen` first
 
 ## Gotchas
 
 - **Re-run `deploy-commands` every time you change `DOMAIN_COMMANDS`** — otherwise Discord won't show the new commands
-- Set `DISCORD_GUILD_ID` during dev for instant command updates; remove it for global deployment
+- Set `GUILD_1` during dev for instant command updates; remove it for global deployment
 - The `data/` directory is created automatically — no manual setup needed
 - Users need DMs enabled in their Discord settings to receive email deliveries
