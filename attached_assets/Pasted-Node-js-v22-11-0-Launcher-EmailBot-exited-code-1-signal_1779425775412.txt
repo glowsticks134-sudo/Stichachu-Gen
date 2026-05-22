@@ -1,0 +1,92 @@
+Node.js v22.11.0
+          ^
+[Launcher] EmailBot exited (code=1, signal=null) — restarting in 5s
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:356:11)
+    at #translate (node:internal/modules/esm/loader:433:12)
+[Launcher] Starting EmailBot...
+node:internal/modules/esm/translators:356
+    throw new ERR_UNKNOWN_BUILTIN_MODULE(url);
+          ^
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:356:11)
+    at #translate (node:internal/modules/esm/loader:433:12)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:480:27) {
+  code: 'ERR_UNKNOWN_BUILTIN_MODULE'
+}
+Node.js v22.11.0
+[Launcher] EmailBot exited (code=1, signal=null) — restarting in 5s
+[Launcher] Starting EmailBot...
+  code: 'ERR_UNKNOWN_BUILTIN_MODULE'
+}
+node:internal/modules/esm/translators:356
+Node.js v22.11.0
+    throw new ERR_UNKNOWN_BUILTIN_MODULE(url);
+          ^
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:356:11)
+    at #translate (node:internal/modules/esm/loader:433:12)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:480:27) {
+[Launcher] EmailBot exited (code=1, signal=null) — restarting in 5s
+[Launcher] Starting EmailBot...
+    at #translate (node:internal/modules/esm/loader:433:12)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:480:27) {
+node:internal/modules/esm/translators:356
+  code: 'ERR_UNKNOWN_BUILTIN_MODULE'
+    throw new ERR_UNKNOWN_BUILTIN_MODULE(url);
+}
+          ^
+Node.js v22.11.0
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:356:11)
+[Launcher] EmailBot exited (code=1, signal=null) — restarting in 5s
+[Launcher] Starting EmailBot...
+  code: 'ERR_UNKNOWN_BUILTIN_MODULE'
+}
+Node.js v22.11.0
+[Launcher] EmailBot exited (code=1, signal=null) — restarting in 5s
+node:internal/modules/esm/translators:356
+    throw new ERR_UNKNOWN_BUILTIN_MODULE(url);
+          ^
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:356:11)
+    at #translate (node:internal/modules/esm/loader:433:12)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:480:27) {
+[Launcher] Starting EmailBot...
+node:internal/modules/esm/translators:356
+    throw new ERR_UNKNOWN_BUILTIN_MODULE(url);
+          ^
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:356:11)
+    at #translate (node:internal/modules/esm/loader:433:12)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:480:27) {
+  code: 'ERR_UNKNOWN_BUILTIN_MODULE'
+}
+Node.js v22.11.0
+[Launcher] EmailBot exited (code=1, signal=null) — restarting in 5s
+Node.js v22.11.0
+[Launcher] EmailBot exited (code=1, signal=null) — restarting in 5s
+[Launcher] Starting EmailBot...
+node:internal/modules/esm/translators:356
+    throw new ERR_UNKNOWN_BUILTIN_MODULE(url);
+          ^
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:356:11)
+    at #translate (node:internal/modules/esm/loader:433:12)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:480:27) {
+  code: 'ERR_UNKNOWN_BUILTIN_MODULE'
+}
+[Launcher] Starting EmailBot...
+node:internal/modules/esm/translators:356
+    throw new ERR_UNKNOWN_BUILTIN_MODULE(url);
+          ^
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:356:11)
+    at #translate (node:internal/modules/esm/loader:433:12)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:480:27) {
+  code: 'ERR_UNKNOWN_BUILTIN_MODULE'
+}
+Node.js v22.11.0
+[Launcher] EmailBot exited (code=1, signal=null) — restarting in 5s
+Node.js v22.11.0
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite

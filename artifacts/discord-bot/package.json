@@ -5,8 +5,8 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "start": "node --no-warnings=ExperimentalWarning src/index.js",
-    "dev": "node --no-warnings=ExperimentalWarning --watch src/index.js",
+    "start": "node --experimental-sqlite --no-warnings=ExperimentalWarning src/index.js",
+    "dev": "node --experimental-sqlite --no-warnings=ExperimentalWarning --watch src/index.js",
     "deploy-commands": "node --no-warnings=ExperimentalWarning src/deploy-commands.js"
   },
   "dependencies": {

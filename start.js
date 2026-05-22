@@ -8,6 +8,10 @@
 
 const { spawn } = require('child_process');
 
+// Ensure node:sqlite is available on Node 22 (became stable in v23.4+).
+// NODE_OPTIONS is inherited by all spawned processes including shard workers.
+process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS ? process.env.NODE_OPTIONS + ' ' : '') + '--experimental-sqlite';
+
 const bots = [
   {
     name: 'EmailBot',
