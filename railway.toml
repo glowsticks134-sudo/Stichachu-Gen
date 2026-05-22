@@ -1,0 +1,15 @@
+# Railway configuration — runs both bots in one service.
+# Root Directory in Railway dashboard must be left EMPTY (repo root).
+#
+# Variables to set in Railway:
+#   Email bot:    TOKEN_1, CLIENT_1
+#   Utility bot:  TOKEN, CLIENT_ID, OWNER_IDS,
+#                 LAVALINK_HOST, LAVALINK_PORT, LAVALINK_PASSWORD, LAVALINK_SECURE
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node start.js"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

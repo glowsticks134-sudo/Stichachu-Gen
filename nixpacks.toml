@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
+
+[phases.install]
+cmds = [
+  "cd artifacts/discord-bot && npm install",
+  "cd artifacts/utility-bot && npm install",
+]
+
+[start]
+cmd = "node start.js"
