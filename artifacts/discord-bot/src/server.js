@@ -31,8 +31,9 @@ const upload = multer();
 export function startWebhookServer(client) {
   const app = express();
 
-  // PORT is injected by Railway automatically; fall back to WEBHOOK_PORT or 3001
-  const port = parseInt(process.env.PORT ?? process.env.WEBHOOK_PORT ?? '3001', 10);
+  // Use WEBHOOK_PORT for the webhook server — never consume Railway's PORT,
+  // which is reserved for the utility bot's health-check server.
+  const port = parseInt(process.env.WEBHOOK_PORT ?? '3001', 10);
   const secret = process.env.WEBHOOK_SECRET?.trim() || null;
 
   app.use(express.json());
