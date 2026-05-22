@@ -3,8 +3,8 @@ nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
 
 [phases.install]
 cmds = [
-  "npm install --prefix artifacts/discord-bot",
-  "npm install --prefix artifacts/utility-bot",
+  "npm install -g pnpm",
+  "pnpm install --frozen-lockfile",
 ]
 
 [start]
